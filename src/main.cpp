@@ -47,25 +47,95 @@ struct HitKey {
 
 class HitData {
     private:
-        std::vector<uint32_t> _words;
+        int board_id;
+        int gts_tag;
+
+        int channel_id = -1;
+        int hit_id     = -1;
+
+        int hit_time_rise = -1;
+        int hit_time_fall = -1;
+        int amplitude_lg  = -1;
+        int amplitude_hg  = -1;
+
     public:
-        uint32_t tag_id, hit_id, channel_id, feb_id, hit_time_rise, hit_time_fall, amplitude_low, amplitude_up;
-        HitData(std::vector<uint32_t> word_list) : _words(word_list) {
-            // TO DO: fill hit information from word list
-            // Is it possible to have more than 1 timestamp and only 1 amplitude?? What should I do in that case??
+
+        HitData(int board, int gts, const std::vector<uint32_t>& word_list)
+            : board_id(board), gts_tag(gts) {
+            if (word_list.size() != 4) {
+                std::cerr << "Warning: hit data packet size != 4 (size = " << word_list.size() << ")\n";
+            }
+
+            for (uint32_t raw : word_list) {
+                std::unique_ptr<Word> w = parse_word(raw);
+
+                switch (w->word_id) {
+                    case WordID::HIT_TIME: {
+                        auto* ht = static_cast<HitTime*>(w.get());
+                        validate_ids(ht->channel_id, ht->hit_id);
+
+                        if (ht->edge == 0)
+                            hit_time_rise = ht->hit_time;
+                        else
+                            hit_time_fall = ht->hit_time;
+                        break;
+                    }
+
+                    case WordID::HIT_AMPLITUDE: {
+                        auto* ha = static_cast<HitAmplitude*>(w.get());
+                        validate_ids(ha->channel_id, ha->hit_id);
+
+                        if (ha->amplitude_id == 2)
+                            amplitude_hg = ha->amplitude_value;
+                        else
+                            amplitude_lg = ha->amplitude_value;
+                        break;
+                    }
+
+                    default:
+                        throw std::runtime_error(
+                            "Invalid word encountered in hit data: WordID = " +
+                            std::to_string(w->word_id));
+                }
+            }
+        }
+
+        void validate_ids(int ch, int hid) {
+            if (channel_id < 0) {
+                channel_id = ch;
+                hit_id     = hid;
+                return;
+            }
+
+            if (ch != channel_id || hid != hit_id) {
+                throw std::runtime_error(
+                    "Inconsistent hit data: channel_id/hit_id mismatch");
+            }
+        }
+
+        void print() const {
+            std::cout << "Hit:\n"
+                    << "  GTS tag:       " << gts_tag << '\n'
+                    << "  Board ID:      " << board_id << '\n'
+                    << "  Channel ID:    " << channel_id << '\n'
+                    << "  Hit ID:        " << hit_id << '\n'
+                    << "  Rise time:     " << hit_time_rise << '\n'
+                    << "  Fall time:     " << hit_time_fall << '\n'
+                    << "  Amplitude LG:  " << amplitude_lg << '\n'
+                    << "  Amplitude HG:  " << amplitude_hg << '\n';
         }
 };
+
 
 class GTSDataPacket {
     private:
         std::vector<uint32_t> _words;
-        // std::map<HitKey, std::vector<Word*> > _hit_groups;
-        std::map<HitKey, std::vector<uint32_t> > _hit_groups;
+        std::vector<HitData> _hits;
 
         public:
-            uint32_t gts_tag;
+            int gts_tag, board_id;
 
-            GTSDataPacket(std::vector<uint32_t> word_list) : _words(word_list) {
+            GTSDataPacket(int in_board_id, std::vector<uint32_t> word_list) : _words(word_list), board_id(in_board_id) {
                 // std::cout << "### GTS data packet starts:" << std::endl;
                 // for(auto& w: _words) {parse_word(w)->print();}
                 if (_words.size() < 3) {
@@ -85,6 +155,8 @@ class GTSDataPacket {
                 }
                 
                 gts_tag = gts_header->gts_tag;
+
+                std::map<HitKey, std::vector<uint32_t> > hit_groups;
 
                 for (auto& w : _words) {
                     std::unique_ptr<Word> base = parse_word(w);
@@ -106,15 +178,18 @@ class GTSDataPacket {
 
                         // --- Grouping: add to map ---
                         // _hit_groups[key].push_back(base.get());
-                        _hit_groups[key].push_back(w);
+                        hit_groups[key].push_back(w);
                     }
+                }
+
+                for (const auto& [key, group] : hit_groups) {
+                    _hits.push_back(HitData(board_id, gts_tag, group));
                 }
 
             }
             
-            std::vector<uint32_t> get_words() {return _words;}
-
-            std::map<HitKey, std::vector<uint32_t> > get_hits() {return _hit_groups;}
+            // std::vector<uint32_t> get_words() {return _words;}
+            std::vector<HitData> get_hits() {return _hits;}
 
 };
 
@@ -124,10 +199,17 @@ class FEBDataPacket {
         std::vector<GTSDataPacket> _gts_packets;
     public:
         int hold_time = -1;
+        int board_id;
         FEBDataPacket(std::vector<uint32_t> word_list) : _words(word_list) {
 
             check_expected_word(_words.front(), WordID::GATE_HEADER);
             check_expected_word(_words.back(),  WordID::FEB_DATA_PACKET_TRAILER);
+            std::unique_ptr<Word> gate_header_word = parse_word(_words.front());
+            auto* gate_header_object  = dynamic_cast<GateHeader*>(gate_header_word.get());
+            board_id = gate_header_object->board_id;
+
+            // TO DO: check board id in gate header, hold time, gate trailer, event done ??
+
             if (parse_word(_words.at(1))->word_id == WordID::HOLD_TIME){
                 std::unique_ptr<Word> hold_time_word = parse_word(_words.at(1));
                 auto* hold_time_object  = dynamic_cast<HoldTime*>(hold_time_word.get());
@@ -190,7 +272,7 @@ class FEBDataPacket {
 
                     if (!previous_gts_packet.empty()) {
                         // Close out previous packet
-                        _gts_packets.push_back(GTSDataPacket(previous_gts_packet));
+                        _gts_packets.push_back(GTSDataPacket(board_id, previous_gts_packet));
                         previous_gts_packet.clear();
                     }
 
@@ -204,13 +286,13 @@ class FEBDataPacket {
 
             if (!previous_gts_packet.empty()) {
                 // Close out last GTS packet
-                _gts_packets.push_back(GTSDataPacket(previous_gts_packet));
+                _gts_packets.push_back(GTSDataPacket(board_id, previous_gts_packet));
                 previous_gts_packet.clear();
             }
 
             if (!current_gts_packet.empty()) {
                 // Close out current GTS packet even if there is no Trailer2 ??
-                _gts_packets.push_back(GTSDataPacket(current_gts_packet));
+                _gts_packets.push_back(GTSDataPacket(board_id, current_gts_packet));
                 current_gts_packet.clear();
             }
         }
@@ -320,13 +402,10 @@ int main(int argc, char** argv) {
                 std::cout << "Total number of GTS packets: " << gts_packets.size() << std::endl;
                 for(auto& gts : gts_packets) {
                     std::cout << "### Starts GTS Packet with GTS Tag " << gts.gts_tag << std::endl;
-                    std::map<HitKey, std::vector<uint32_t> > hits = gts.get_hits();
+                    std::vector<HitData> hits = gts.get_hits();
                     std::cout << "Total number of Hits: " << hits.size() << std::endl;
-                    for (const auto& [key, group] : hits) {
-                        std::cout << "### Starts HIT with channel ID: "  << key.hit_id << ", hit ID: " << key.hit_id << std::endl;
-                        for(const auto& w : group){
-                            parse_word(w)->print();
-                        }
+                    for (const auto& hit : hits) {
+                        hit.print();
                     }
                 }
             }
