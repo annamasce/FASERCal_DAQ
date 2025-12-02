@@ -60,13 +60,13 @@ class HitData {
 
     public:
 
-        HitData(int board, int gts, const std::vector<uint32_t>& word_list)
+        HitData(int board, int gts, const std::vector<uint32_t>& words)
             : board_id(board), gts_tag(gts) {
-            if (word_list.size() != 4) {
-                std::cerr << "Warning: hit data packet size != 4 (size = " << word_list.size() << ")\n";
+            if (words.size() != 4) {
+                std::cerr << "Warning: hit data packet size != 4 (size = " << words.size() << ")\n";
             }
 
-            for (uint32_t raw : word_list) {
+            for (uint32_t raw : words) {
                 std::unique_ptr<Word> w = parse_word(raw);
 
                 switch (w->word_id) {
@@ -129,26 +129,25 @@ class HitData {
 
 class GTSDataPacket {
     private:
-        std::vector<uint32_t> _words;
         std::vector<HitData> _hits;
 
         public:
             int gts_tag, board_id;
 
-            GTSDataPacket(int in_board_id, std::vector<uint32_t> word_list) : _words(word_list), board_id(in_board_id) {
+            GTSDataPacket(int in_board_id, const std::vector<uint32_t>& words) : board_id(in_board_id) {
                 // std::cout << "### GTS data packet starts:" << std::endl;
                 // for(auto& w: _words) {parse_word(w)->print();}
-                if (_words.size() < 3) {
+                if (words.size() < 3) {
                     throw std::runtime_error("Size of GTS packet is not enough to contain header and trailers!");
                 }
-                check_expected_word(_words.front(), WordID::GTS_HEADER);
-                check_expected_word(_words.at(_words.size() - 2), WordID::GTS_TRAILER1);
-                check_expected_word(_words.back(),  WordID::GTS_TRAILER2);
+                check_expected_word(words.front(), WordID::GTS_HEADER);
+                check_expected_word(words.at(words.size() - 2), WordID::GTS_TRAILER1);
+                check_expected_word(words.back(),  WordID::GTS_TRAILER2);
 
                 // Check that GTS tag in Header and Trailer1 are the same
-                std::unique_ptr<Word> gts_header_word = parse_word(_words.front());
+                std::unique_ptr<Word> gts_header_word = parse_word(words.front());
                 auto* gts_header  = dynamic_cast<GTSHeader*>(gts_header_word.get());
-                std::unique_ptr<Word> gts_trailer1_word = parse_word(_words.at(_words.size() - 2));
+                std::unique_ptr<Word> gts_trailer1_word = parse_word(words.at(words.size() - 2));
                 auto* gts_trailer1 = dynamic_cast<GTSTrailer1*>(gts_trailer1_word.get());
                 if (gts_header->gts_tag != gts_trailer1->gts_tag) {
                     throw std::runtime_error("GTS tag does not match between GTS header and trailer 1!");
@@ -158,7 +157,7 @@ class GTSDataPacket {
 
                 std::map<HitKey, std::vector<uint32_t> > hit_groups;
 
-                for (auto& w : _words) {
+                for (auto& w : words) {
                     std::unique_ptr<Word> base = parse_word(w);
                     WordID id = base->word_id;
 
@@ -195,23 +194,22 @@ class GTSDataPacket {
 
 class FEBDataPacket {
     private:
-        std::vector<uint32_t> _words;
         std::vector<GTSDataPacket> _gts_packets;
     public:
         int hold_time = -1;
         int board_id;
-        FEBDataPacket(std::vector<uint32_t> word_list) : _words(word_list) {
+        FEBDataPacket(const std::vector<uint32_t>& words) {
 
-            check_expected_word(_words.front(), WordID::GATE_HEADER);
-            check_expected_word(_words.back(),  WordID::FEB_DATA_PACKET_TRAILER);
-            std::unique_ptr<Word> gate_header_word = parse_word(_words.front());
+            check_expected_word(words.front(), WordID::GATE_HEADER);
+            check_expected_word(words.back(),  WordID::FEB_DATA_PACKET_TRAILER);
+            std::unique_ptr<Word> gate_header_word = parse_word(words.front());
             auto* gate_header_object  = dynamic_cast<GateHeader*>(gate_header_word.get());
             board_id = gate_header_object->board_id;
 
             // TO DO: check board id in gate header, hold time, gate trailer, event done ??
 
-            if (parse_word(_words.at(1))->word_id == WordID::HOLD_TIME){
-                std::unique_ptr<Word> hold_time_word = parse_word(_words.at(1));
+            if (parse_word(words.at(1))->word_id == WordID::HOLD_TIME){
+                std::unique_ptr<Word> hold_time_word = parse_word(words.at(1));
                 auto* hold_time_object  = dynamic_cast<HoldTime*>(hold_time_word.get());
                 hold_time = hold_time_object->hold_time;
             }
@@ -223,7 +221,7 @@ class FEBDataPacket {
             std::vector<uint32_t> previous_gts_packet;
             constexpr int TAG_MASK = 0x3;
 
-            for (auto& w : _words) {
+            for (auto& w : words) {
                 std::unique_ptr<Word> base = parse_word(w);
                 WordID id = base->word_id;
 
@@ -303,19 +301,18 @@ class FEBDataPacket {
 
 class OCBDataPacket {
     private:
-        std::vector<uint32_t> _words;
         std::vector<FEBDataPacket> _feb_packets;
 
     public:
         uint32_t gate_type, gate_tag, event_number;
         
-        OCBDataPacket(std::vector<uint32_t> word_list) : _words(word_list) {
+        OCBDataPacket(const std::vector<uint32_t>& words) {
 
-            check_expected_word(_words.front(), WordID::OCB_PACKET_HEADER);
-            check_expected_word(_words.back(),  WordID::OCB_PACKET_TRAILER);
+            check_expected_word(words.front(), WordID::OCB_PACKET_HEADER);
+            check_expected_word(words.back(),  WordID::OCB_PACKET_TRAILER);
 
-            std::unique_ptr<Word> header_word = parse_word(_words.front());
-            std::unique_ptr<Word> trailer_word = parse_word(_words.back());
+            std::unique_ptr<Word> header_word = parse_word(words.front());
+            std::unique_ptr<Word> trailer_word = parse_word(words.back());
             auto* ocb_packet_header  = dynamic_cast<OCBPacketHeader*>(header_word.get());
             auto* ocb_packet_trailer = dynamic_cast<OCBPacketTrailer*>(trailer_word.get());
 
@@ -331,7 +328,7 @@ class OCBDataPacket {
 
             int index = 0;
             int start_index = -1;
-            for (auto& w : _words){
+            for (auto& w : words){
                 if (parse_word(w)->word_id == WordID::GATE_HEADER) {
                     start_index = index;
                 }
@@ -341,7 +338,7 @@ class OCBDataPacket {
                     }
                     std::vector<uint32_t> feb_packet_word_list;
                     for (int k = start_index; k < index+1; ++k) {
-                        feb_packet_word_list.push_back(_words[k]);
+                        feb_packet_word_list.push_back(words[k]);
                     }
                     _feb_packets.push_back(FEBDataPacket(feb_packet_word_list));
                     start_index = -1;
@@ -409,11 +406,17 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+            start_index = -1;
         }
         index++;
     }
 
     std::cout << "Number of OCB packets: " << (int) ocb_packets.size() << std::endl;
+
+    // Loop over all words to check file
+    for (auto& w : word_list) {
+        parse_word(w)->print();
+    }
 
 
     return 0;
