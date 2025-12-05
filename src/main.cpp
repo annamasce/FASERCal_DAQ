@@ -39,9 +39,11 @@ int main(int argc, char** argv) {
     unsigned char buf[4];
     std::vector<uint32_t> word_list;
 
+    // First loop just to print all words once
     while (in.read(reinterpret_cast<char*>(buf), 4)) {
         uint32_t word = bytes_to_uint32(buf);
         word_list.push_back(word);
+        parse_word(word)->print();
     }
 
     // Iterate OCB packets inside file

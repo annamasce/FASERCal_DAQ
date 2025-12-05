@@ -230,40 +230,66 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
 
     event.event_number = ocb_packet_header->event_number;
 
-    int index = 0;
-    int start_index = -1;
+    int global_index = 0;
+    int gate_header_index = -1;
+    int feb_id = -1;
+    int nbr_feb_words = 0;
     for (auto& w : words) {
-        WordID wid = parse_word(w)->word_id;
-        if (wid == WordID::GATE_HEADER) {
-            start_index = index;
+        std::unique_ptr<Word> parsed_w = parse_word(w);
+
+
+        switch (parsed_w->word_id) {
+            case WordID::GATE_HEADER: {
+                gate_header_index = global_index;
+                auto* gate_header = static_cast<GateHeader*>(parsed_w.get());
+                feb_id = gate_header->board_id;
+                // header_type=0 -> artificially added by the OCB, so shouldn't be counted among FEB words
+                if (gate_header->header_type != 0) nbr_feb_words++;
+                break;
+            }
+
+            case WordID::EVENT_DONE: {
+                nbr_feb_words++;
+                auto* event_done = static_cast<EventDone*>(parsed_w.get());
+                if ((int)event_done->word_count != nbr_feb_words) {
+                    std::cerr << "Word count in EventDone ( " + std::to_string(event_done->word_count) 
+                                             << " ) does not match # words in FEB packet ( " << std::to_string(nbr_feb_words) << " )\n";
+                }
+                break;
+            }
+
+            case WordID::FEB_DATA_PACKET_TRAILER: {
+                nbr_feb_words++;
+                if (gate_header_index < 0) {
+                    throw std::runtime_error("FEB Data Packet Trailer received without corresponding Gate Header");
+                }
+
+                std::vector<uint32_t> feb_packet_word_list;
+                for (int k = gate_header_index; k < global_index+1; ++k) {
+                    feb_packet_word_list.push_back(words[k]);
+                }
+
+                if (feb_id < 0 || feb_id >= (int)event.febs.size()) {
+                    std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
+                } 
+                else if (event.febs[feb_id] != nullptr) {
+                    std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
+                }
+                else {
+                    event.febs[feb_id] = std::make_shared<FEBDataPacket>(feb_packet_word_list);
+                }
+
+                // Reset FEB indices and counters
+                gate_header_index = -1;
+                nbr_feb_words = 0;
+                break;
+            }
+            
+            default: {
+                nbr_feb_words++;
+            }
+
         }
-        if (wid == WordID::FEB_DATA_PACKET_TRAILER) {
-            if (start_index < 0) {
-                throw std::runtime_error("FEB Data Packet Trailer received without corresponding Gate Header");
-            }
-
-            std::vector<uint32_t> feb_packet_word_list;
-            for (int k = start_index; k < index+1; ++k) {
-                feb_packet_word_list.push_back(words[k]);
-            }
-
-            // Get FEB board id from its gate header
-            std::unique_ptr<Word> gate_header_word = parse_word(feb_packet_word_list.front());
-            auto* gate_header_object  = dynamic_cast<GateHeader*>(gate_header_word.get());
-            int feb_id = gate_header_object->board_id;
-
-            if (feb_id < 0 || feb_id >= (int)event.febs.size()) {
-                std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
-            } 
-            else if (event.febs[feb_id] != nullptr) {
-                std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
-            }
-            else {
-                event.febs[feb_id] = std::make_shared<FEBDataPacket>(feb_packet_word_list);
-            }
-
-            start_index = -1;
-        }
-        ++index;
+        ++global_index;
     }
 }
