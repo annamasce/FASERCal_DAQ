@@ -237,20 +237,28 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
     for (auto& w : words) {
         std::unique_ptr<Word> parsed_w = parse_word(w);
 
-
         switch (parsed_w->word_id) {
             case WordID::GATE_HEADER: {
-                gate_header_index = global_index;
                 auto* gate_header = static_cast<GateHeader*>(parsed_w.get());
-                feb_id = gate_header->board_id;
-                // header_type=0 -> artificially added by the OCB, so shouldn't be counted among FEB words
                 if (gate_header->header_type != 0) nbr_feb_words++;
+                else { 
+                    // reset FEB word counter
+                    nbr_feb_words = 0;
+                    gate_header_index = global_index;
+                    feb_id = gate_header->board_id;
+                    // word count should be increased only if header 0 is followed by header 1, otherwise it means header 0 is artificially added by the OCB
+                    if (global_index + 1 < (int)words.size()) {
+                        std::unique_ptr<Word> next_w = parse_word(words.at(global_index+1));
+                        if (next_w->word_id == WordID::GATE_HEADER) nbr_feb_words++;
+                    }
+                }
                 break;
             }
 
             case WordID::EVENT_DONE: {
                 nbr_feb_words++;
                 auto* event_done = static_cast<EventDone*>(parsed_w.get());
+                // Check word count
                 if ((int)event_done->word_count != nbr_feb_words) {
                     std::cerr << "Word count in EventDone ( " + std::to_string(event_done->word_count) 
                                              << " ) does not match # words in FEB packet ( " << std::to_string(nbr_feb_words) << " )\n";
@@ -264,11 +272,6 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
                     throw std::runtime_error("FEB Data Packet Trailer received without corresponding Gate Header");
                 }
 
-                std::vector<uint32_t> feb_packet_word_list;
-                for (int k = gate_header_index; k < global_index+1; ++k) {
-                    feb_packet_word_list.push_back(words[k]);
-                }
-
                 if (feb_id < 0 || feb_id >= (int)event.febs.size()) {
                     std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
                 } 
@@ -276,12 +279,15 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
                     std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
                 }
                 else {
+                    std::vector<uint32_t> feb_packet_word_list;
+                    for (int k = gate_header_index; k < global_index+1; ++k) {
+                        feb_packet_word_list.push_back(words[k]);
+                    }
                     event.febs[feb_id] = std::make_shared<FEBDataPacket>(feb_packet_word_list);
                 }
 
-                // Reset FEB indices and counters
+                // Reset FEB index
                 gate_header_index = -1;
-                nbr_feb_words = 0;
                 break;
             }
             
