@@ -55,7 +55,7 @@ void HitData::validate_ids(int ch, int hid) {
     }
 
     if (ch != channel_id || hid != hit_id) {
-        throw std::runtime_error("Inconsistent hit data: channel_id/hit_id mismatch");
+        throw std::runtime_error("Inconsistent hit data: channel_id or hit_id mismatch");
     }
 }
 
@@ -228,12 +228,14 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
         throw std::runtime_error("Different gate tag in OCB packet header and trailer!");
     }
 
-    event.event_number = ocb_packet_header->event_number;
+    event.event_id = ocb_packet_header->event_number;
 
+    // Check word count and construct FEB data packets
     int global_index = 0;
     int gate_header_index = -1;
     int feb_id = -1;
     int nbr_feb_words = 0;
+    int nbr_gts = 0;
     for (auto& w : words) {
         std::unique_ptr<Word> parsed_w = parse_word(w);
 
@@ -244,6 +246,8 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
                 else { 
                     // reset FEB word counter
                     nbr_feb_words = 0;
+                    nbr_gts = 0;
+                    // Store index of current gate header and board id
                     gate_header_index = global_index;
                     feb_id = gate_header->board_id;
                     // word count should be increased only if header 0 is followed by header 1, otherwise it means header 0 is artificially added by the OCB
@@ -255,8 +259,28 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
                 break;
             }
 
-            case WordID::EVENT_DONE: {
+            case WordID::GATE_TIME:
+            case WordID::HOLD_TIME: {
                 nbr_feb_words++;
+                break;
+            }
+
+            case WordID::GTS_HEADER: {
+                nbr_gts++;
+                if (nbr_gts > OCBConfig::NUM_GTS_BEFORE_EVENT) nbr_feb_words++;
+                break;
+            }
+
+            // increment FEB word count only if number of GTS headers received is above GTS_BEFORE_EVENT
+            case WordID::GTS_TRAILER1:
+            case WordID::GTS_TRAILER2:
+            case WordID::HIT_TIME:
+            case WordID::HIT_AMPLITUDE: {
+                if (nbr_gts > OCBConfig::NUM_GTS_BEFORE_EVENT) nbr_feb_words++;
+                break;
+            }
+
+            case WordID::EVENT_DONE: {
                 auto* event_done = static_cast<EventDone*>(parsed_w.get());
                 // Check word count
                 if ((int)event_done->word_count != nbr_feb_words) {
@@ -292,7 +316,7 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
             }
             
             default: {
-                nbr_feb_words++;
+                std::cerr << "Warning: encountered word id not belonging to FEB data packet: " << parsed_w->word_id << "\n";
             }
 
         }

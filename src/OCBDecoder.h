@@ -8,10 +8,12 @@
 #include <memory>
 #include <map>
 #include <iostream>
-#include "Word.h" // Assumes your existing Word.h defines parse_word(), WordID and concrete Word subclasses
+#include "Word.h"
 
-// Forward declarations
-class FEBDataPacket;
+namespace OCBConfig {
+    inline constexpr int NUM_GTS_BEFORE_EVENT = 2;
+    inline constexpr int NUM_FEBS_PER_OCB = 9;
+}
 
 // Hit key used to uniquely identify words belonging to the same Hit (within same FEB and GTS)
 struct HitKey {
@@ -65,23 +67,40 @@ private:
 };
 
 struct OCBevent {
-    int event_number = -1;
-    // 9 FEBs (indices assumed 0..8). nullptr for missing FEBs.
-    std::array<std::shared_ptr<FEBDataPacket>, 9> febs;
+    uint32_t event_id;
+    // FEBs' indices assumed 0...NUM_FEB_PER_OCB; nullptr for missing FEBs.
+    std::array<std::shared_ptr<FEBDataPacket>, OCBConfig::NUM_FEBS_PER_OCB> febs;
 
     OCBevent();
 };
 
 class OCBDataPacket {
-private:
-    OCBevent event;
 
 public:
     OCBDataPacket(const std::vector<uint32_t>& words, bool debug = false);
 
-    const OCBevent& get_event() const { return event; }
+    uint32_t get_event_id() const { return event.event_id; }
+
+    const FEBDataPacket& get_feb(size_t board_id) const { return *(event.febs[board_id]); }
+    const FEBDataPacket& operator[](size_t board_id) const { return *(event.febs[board_id]); }
+    bool hasData(size_t board_id) const { return (event.febs[board_id] != nullptr); }
+
+    size_t get_Nfebs_in_ocb() const { return event.febs.size(); }
+    uint32_t get_Nfebs_fired() const {
+        size_t count = 0;
+        for (const auto& feb : event.febs) {
+            if (feb != nullptr) count++;
+        }
+        return count;
+    }
+
+
+
+    // const OCBevent& get_event() const { return event; }
+    // To Do: add all functions to get access to event (OCBevent) data and remove get_event()
 
 private:
+    OCBevent event;
     void decodeOCBdata(const std::vector<uint32_t>& words, bool debug);
     // void decodeFEBdata(const std::vector<uint32_t>& words, bool debug);
 };

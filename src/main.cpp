@@ -68,12 +68,12 @@ int main(int argc, char** argv) {
             ocb_packets.push_back(std::move(ocb));
 
             // Print contents
-            const OCBevent& ev = ocb_packets.back().get_event();
-            std::cout << "OCB event " << ev.event_number << " loaded.\n";
-            for (size_t feb = 0; feb < ev.febs.size(); ++feb) {
-                if (!ev.febs[feb]) continue;
-                std::cout << " FEB " << feb << " present. Hits: " << ev.febs[feb]->get_hits().size() << "\n";
-                for (const auto& hit : ev.febs[feb]->get_hits()) {
+            const OCBDataPacket& ev = ocb_packets.back();
+            std::cout << "OCB event " << ev.get_event_id() << " loaded.\n";
+            for (size_t feb = 0; feb < ev.get_Nfebs_in_ocb(); ++feb) {
+                if (!ev.hasData(feb)) continue;
+                std::cout << " FEB " << feb << " present. Hits: " << ev[feb].get_hits().size() << "\n";
+                for (const auto& hit : ev[feb].get_hits()) {
                     hit.print();
                 }
             }
