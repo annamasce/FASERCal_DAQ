@@ -1,11 +1,13 @@
 #include "OCBDecoder.h"
 #include <stdexcept>
+// #include <map>
 
 OCBevent::OCBevent() {
     febs.fill(nullptr);
 }
 
 // ---------------- HitData ----------------
+
 HitData::HitData(int board, int gts, const std::vector<uint32_t>& words)
     : board_id(board), gts_tag(gts)
 {
@@ -71,6 +73,32 @@ void HitData::print() const {
               << "  Amplitude HG:  " << amplitude_hg << '\n';
 }
 
+void HitTimeData::print() const {
+    std::cout << "Hit time:\n"
+              << "  Board ID:      " << board_id << '\n'
+              << "  Channel ID:    " << channel_id << '\n'
+              << "  Hit ID:        " << hit_id << '\n'
+              << "  GTS tag rise:  " << gts_tag_rise << '\n'
+              << "  Tag ID rise:   " << tag_id_rise << '\n'
+              << "  GTS tag fall:  " << gts_tag_fall << '\n'
+              << "  Tag ID fall:   " << tag_id_fall << '\n'
+              << "  Rise time:     " << hit_time_rise << '\n'
+              << "  Fall time:     " << hit_time_fall << '\n';
+}
+
+void HitAmplitudeData::print() const {
+    std::cout << "Hit amplitude:\n"
+              << "  Board ID:      " << board_id << '\n'
+              << "  Channel ID:    " << channel_id << '\n'
+              << "  Hit ID:        " << hit_id << '\n'
+              << "  GTS tag lg:    " << gts_tag_lg << '\n'
+              << "  Tag ID lg:     " << tag_id_lg << '\n'
+              << "  GTS tag hg:    " << gts_tag_hg << '\n'
+              << "  Tag ID hg:     " << tag_id_hg << '\n'
+              << "  Amplitude lg:  " << amplitude_lg << '\n'
+              << "  Amplitude hg:  " << amplitude_hg << '\n';
+}
+
 // ---------------- FEBDataPacket ----------------
 FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words) {
     if (words.empty())
@@ -95,105 +123,134 @@ FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words) {
 }
 
 void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
-    int previous_gts_tag = -1;
-    int current_gts_tag = -1;
 
-    // Need to keep track of previous GTS tag since hit words from one GTS can be received in the following GTS packet
-    std::vector<uint32_t> current_gts_packet;
-    std::vector<uint32_t> previous_gts_packet;
-    constexpr int TAG_MASK = 0x3;
+    std::vector<uint32_t> gts_tags;
+    std::map<HitTimeKey, HitTimeData> hit_times_map;
+    std::map<uint32_t, HitAmplitudeData> hit_amplitudes_map; // map channel id to hit amplitude data
+    // constexpr int TAG_MASK = 0x3;
 
     for (auto& w : words) {
         std::unique_ptr<Word> base = parse_word(w);
         WordID id = base->word_id;
 
         if (id == WordID::GTS_HEADER) {
-            auto* gts_header = dynamic_cast<GTSHeader*>(base.get());
-            current_gts_tag = gts_header->gts_tag;
-            current_gts_packet.clear();
-            current_gts_packet.push_back(w);
+            auto* gts_header = static_cast<GTSHeader*>(base.get());
+            gts_tags.push_back(gts_header->gts_tag);
         }
+        else if (id == WordID::HIT_TIME) {
+            // Parse hit word and get hit time information
+            auto* hit = static_cast<HitTime*>(base.get());
+            uint32_t channel_id = hit->channel_id;
+            uint32_t hit_id = hit->hit_id;
+            HitTimeKey key{channel_id, hit_id};
+            if (hit->edge == 0) {
+                // Rising edge
+                auto [it, inserted] = hit_times_map.try_emplace(key, board_id, channel_id, hit_id);
 
-        else if (id == WordID::HIT_TIME || id == WordID::HIT_AMPLITUDE) {
-            // Extract HIT tag from time and amplitude hit word 
-            uint32_t hit_tag = (id == WordID::HIT_TIME)
-                    ? dynamic_cast<HitTime*>(base.get())->tag_id
-                    : dynamic_cast<HitAmplitude*>(base.get())->tag_id;
-
-            // Match HIT tag with current or previous GTS tag
-            if ((hit_tag & TAG_MASK) == (current_gts_tag & TAG_MASK)) {
-                current_gts_packet.push_back(w);
-            }
-            else if ((hit_tag & TAG_MASK) == (previous_gts_tag & TAG_MASK)) {
-                previous_gts_packet.push_back(w);
+                // If not inserted, means second rising edge detected before falling edge
+                if (!inserted) {
+                    throw std::runtime_error(
+                        "Rising edge received twice for same hit (channel_id=" +
+                        std::to_string(channel_id) +
+                        ", hit_id=" +
+                        std::to_string(hit_id) + ")"
+                    );
+                }
+                // Fill rising time info for the hit
+                auto& h = it->second;
+                h.set_hit_time_rise(hit->hit_time);
+                h.set_tag_id_rise(hit->tag_id);
+                h.set_gts_tag_rise(gts_tags.back());
             }
             else {
-                throw std::runtime_error("Hit tag does not match current or previous GTS tag!");
+                // Falling edge
+                auto it = hit_times_map.find(key);
+                if (it == hit_times_map.end()) {
+                    // Rising edge must be received before falling edge
+                    throw std::runtime_error(
+                        "Falling edge received before rising edge for hit (channel_id=" +
+                        std::to_string(channel_id) +
+                        ", hit_id=" +
+                        std::to_string(hit_id) + ")"
+                    );
+                }
+
+                // Fill falling time info for the hit
+                auto& h = it->second;
+                h.set_hit_time_fall(hit->hit_time);
+                h.set_tag_id_fall(hit->tag_id);
+                h.set_gts_tag_fall(gts_tags.back());
+
+                // Save hit time data
+                _hit_times.push_back(std::move(h));
+                // Remove from map
+                hit_times_map.erase(key);
+
+            }
+        }
+
+        else if (id == WordID::HIT_AMPLITUDE) {
+            // Parse hit word and get hit amplitude information
+            auto* hit = static_cast<HitAmplitude*>(base.get());
+            uint32_t channel_id = hit->channel_id;
+            uint32_t hit_id = hit->hit_id;
+            auto [it, inserted] = hit_amplitudes_map.try_emplace(channel_id, board_id, channel_id, hit_id);
+            auto& h = it->second;
+            if (hit->amplitude_id == 2) {
+                // Amplitude HG
+                if (!inserted && h.get_amplitude_hg() != -1) {
+                    throw std::runtime_error(
+                        "High Gain Amplitude received twice for same channel (channel_id=" + std::to_string(channel_id) + ")"
+                    );
+                }
+                h.set_amplitude_hg(hit->amplitude_value);
+                h.set_tag_id_hg(hit->tag_id);
+                h.set_gts_tag_hg(gts_tags.back());
+            }
+            else {
+                // Amplitude LG
+                if (!inserted && h.get_amplitude_lg() != -1) {
+                    throw std::runtime_error(
+                        "Low Gain Amplitude received twice for same channel (channel_id=" + std::to_string(channel_id) + ")"
+                    );
+                }
+                h.set_amplitude_lg(hit->amplitude_value);
+                h.set_tag_id_lg(hit->tag_id);
+                h.set_gts_tag_lg(gts_tags.back());
             }
         }
 
         else if (id == WordID::GTS_TRAILER1) {
-            auto* gts_trailer1 = dynamic_cast<GTSTrailer1*>(base.get());
-            if ((int) gts_trailer1->gts_tag != current_gts_tag) {
+            if (gts_tags.empty()) {
+                throw std::runtime_error("GTS Trailer1 received without corresponding GTS Header!");
+            }
+            // Check that GTS tag in trailer matches current GTS header
+            auto* gts_trailer1 = static_cast<GTSTrailer1*>(base.get());
+            if (gts_trailer1->gts_tag != gts_tags.back()) {
                 throw std::runtime_error("GTS tag in Trailer1 different from current GTS Header!");
             }
-            current_gts_packet.push_back(w);
         }
 
         else if (id == WordID::GTS_TRAILER2) {
-            if (current_gts_packet.empty()) {
-                throw std::runtime_error("GTS Trailer received without corresponding GTS Header!");
+            // Get GTS time and map it to current GTS tag
+            if (gts_tags.empty()) {
+                throw std::runtime_error("GTS Trailer2 received without corresponding GTS Header!");
             }
-            current_gts_packet.push_back(w);
-
-            if (!previous_gts_packet.empty()) {
-                // Add hits from previous GTS to the FEB data packet
-                extract_hits_from_gts(previous_gts_tag, previous_gts_packet);
-                previous_gts_packet.clear();
-            }
-
-            previous_gts_tag = current_gts_tag;
-            previous_gts_packet = std::move(current_gts_packet);
-            current_gts_packet.clear();
-        }
-
-        else current_gts_packet.push_back(w);
-    }
-
-    if (!previous_gts_packet.empty()) {
-        extract_hits_from_gts(previous_gts_tag, previous_gts_packet);
-        previous_gts_packet.clear();
-    }
-
-    if (!current_gts_packet.empty()) {
-        // This can happen when GTS_TRAILER2 is not received after GTS_HEADER.. Should we keep it?
-        extract_hits_from_gts(current_gts_tag, current_gts_packet);
-        current_gts_packet.clear();
-    }
-}
-
-void FEBDataPacket::extract_hits_from_gts(int gts_tag, const std::vector<uint32_t>& block) {
-    std::map<HitKey, std::vector<uint32_t> > hit_groups;
-
-    for (auto& w : block) {
-        std::unique_ptr<Word> base = parse_word(w);
-        WordID id = base->word_id;
-
-        if (id == WordID::HIT_TIME) {
-            auto* hit = dynamic_cast<HitTime*>(base.get());
-            // Words belonging to same hit data identified by same channel_id (channel in board) and hit_id (counter within same channel)
-            HitKey key{hit->hit_id, hit->channel_id};
-            hit_groups[key].push_back(w);
-        }
-        else if (id == WordID::HIT_AMPLITUDE) {
-            auto* hit = dynamic_cast<HitAmplitude*>(base.get());
-            HitKey key{hit->hit_id, hit->channel_id};
-            hit_groups[key].push_back(w);
+            auto* gts_trailer2 = static_cast<GTSTrailer2*>(base.get());
+            uint32_t gts_time = gts_trailer2->gts_time;
+            _gts_tag_map[gts_tags.back()] = gts_time;
         }
     }
 
-    for (const auto& [key, group] : hit_groups) {
-        _hits.emplace_back(board_id, gts_tag, group);
+    // Move completed hits into the vector in FEBDataPacket
+    _hit_times.reserve(hit_times_map.size());
+    for (auto& [key, hit] : hit_times_map) {
+        _hit_times.push_back(std::move(hit));
+    }
+
+    _hit_amplitudes.reserve(hit_amplitudes_map.size());
+    for (auto& [key, hit] : hit_amplitudes_map) {
+        _hit_amplitudes.push_back(std::move(hit));
     }
 }
 
