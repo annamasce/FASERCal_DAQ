@@ -123,7 +123,7 @@ class OCBPacketHeader : public Word {
 class OCBPacketTrailer : public Word {
     public:
         uint32_t gate_type, gate_tag;
-        std::array<bool, 15> errors;
+        std::array<bool, 16> errors;
 
         OCBPacketTrailer(uint32_t raw);
 
@@ -151,7 +151,7 @@ class EventDone : public Word {
 class FEBDataPacketTrailer : public Word {
     public:
         uint_fast32_t board_id, nb_decoder_errors;
-        bool event_done_timeout, d1_fifo_full, d0_fifo_full;
+        bool artificial_trl2, event_done_timeout, d1_fifo_full, d0_fifo_full, rb_cnt_error;
 
         FEBDataPacketTrailer(uint32_t raw);
 

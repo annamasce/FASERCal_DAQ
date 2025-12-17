@@ -164,6 +164,12 @@ private:
     std::vector<HitTimeData> _hit_times;
     std::vector<HitAmplitudeData> _hit_amplitudes;
     std::map<uint32_t, uint32_t> _gts_tag_map; // map GTS tag to GTS time in FEB data packet
+    bool artificial_trl2 = false;
+    bool event_done_timeout = false;
+    bool d1_fifo_full = false;
+    bool d0_fifo_full = false;
+    bool rb_cnt_error = false;
+    int nb_decoder_errors = 0;
 
 public:
     int board_id = -1;
@@ -195,6 +201,13 @@ public:
 
     uint32_t get_event_id() const { return event.event_id; }
 
+    // Access decoded OCB trailer error bits (16 flags). Call
+    // `decode_ocb_errors()` to print human-readable messages for any set bits.
+    const std::array<bool,16>& get_ocb_errors() const { return ocb_errors; }
+
+    // Print messages for any OCB errors stored in this packet's `ocb_errors`.
+    void decode_ocb_errors() const;
+
     const FEBDataPacket& get_feb(size_t board_id) const { return *(event.febs[board_id]); }
     const FEBDataPacket& operator[](size_t board_id) const { return *(event.febs[board_id]); }
     bool hasData(size_t board_id) const { return (event.febs[board_id] != nullptr); }
@@ -208,15 +221,11 @@ public:
         return count;
     }
 
-
-
-    // const OCBevent& get_event() const { return event; }
-    // To Do: add all functions to get access to event (OCBevent) data and remove get_event()
-
 private:
     OCBevent event;
     void decodeOCBdata(const std::vector<uint32_t>& words, bool debug);
-    // void decodeFEBdata(const std::vector<uint32_t>& words, bool debug);
+    // Error bits extracted from the OCB packet trailer (16 bits)
+    std::array<bool,16> ocb_errors{};
 };
 
 #endif // OCBDECODER_H

@@ -1,6 +1,35 @@
 #include "OCBDecoder.h"
 #include <stdexcept>
 // #include <map>
+#include <array>
+
+
+void check_expected_word(uint32_t word, WordID expected_id) {
+    std::unique_ptr<Word> word_object = parse_word(word);
+    if (word_object->word_id != expected_id) {
+        throw std::runtime_error("Wrong word type received: wordID = " + std::to_string(word_object->word_id) + ", expected = " + std::to_string(expected_id));
+    }
+}
+
+// Human-readable descriptions for the 16 OCB trailer error bits.
+static const char* OCB_ERROR_MESSAGES[16] = {
+    "FEB data packet 0 error",
+    "FEB data packet 1 error",
+    "FEB data packet 2 error",
+    "FEB data packet 3 error",
+    "FEB data packet 4 error",
+    "FEB data packet 5 error",
+    "FEB data packet 6 error",
+    "FEB data packet 7 error",
+    "FEB data packet 8 error",
+    "FEB data packet 9 error",
+    "FEB data packet 10 error",
+    "FEB data packet 11 error",
+    "FEB data packet 12 error",
+    "FEB data packet 13 error",
+    "Gate close error",
+    "Gate open timeout"
+};
 
 OCBevent::OCBevent() {
     febs.fill(nullptr);
@@ -104,13 +133,22 @@ FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words) {
     if (words.empty())
         throw std::runtime_error("Empty FEBDataPacket words");
 
-    // Gate header should be first
-    if (parse_word(words.front())->word_id != WordID::GATE_HEADER)
-        throw std::runtime_error("FEB packet does not start with GATE_HEADER");
+    check_expected_word(words.front(), WordID::GATE_HEADER);
+    check_expected_word(words.back(),  WordID::FEB_DATA_PACKET_TRAILER);
 
-    std::unique_ptr<Word> gate_header_word = parse_word(words.front());
-    auto* gate_header_object  = dynamic_cast<GateHeader*>(gate_header_word.get());
-    board_id = gate_header_object->board_id;
+    std::unique_ptr<Word> header_word = parse_word(words.front());
+    std::unique_ptr<Word> trailer_word = parse_word(words.back());
+    auto* gate_header  = dynamic_cast<GateHeader*>(header_word.get());
+    auto* feb_packet_trailer = dynamic_cast<FEBDataPacketTrailer*>(trailer_word.get());
+
+    board_id = gate_header->board_id;
+    // decode FEB packet trailer info
+    nb_decoder_errors = feb_packet_trailer->nb_decoder_errors;
+    artificial_trl2 = feb_packet_trailer->artificial_trl2;
+    event_done_timeout = feb_packet_trailer->event_done_timeout;
+    d1_fifo_full = feb_packet_trailer->d1_fifo_full;
+    d0_fifo_full = feb_packet_trailer->d0_fifo_full;
+    rb_cnt_error = feb_packet_trailer->rb_cnt_error;
 
     // optional hold_time
     if (words.size() > 1 && parse_word(words.at(1))->word_id == WordID::HOLD_TIME){
@@ -119,6 +157,7 @@ FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words) {
         hold_time = hold_time_object->hold_time;
     }
 
+    // Decode FEB data, i.e. get hit times and amplitudes for all channels 
     decodeFEBdata(words);
 }
 
@@ -256,15 +295,20 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
 
 // ---------------- OCBDataPacket ----------------
 
-void check_expected_word(uint32_t word, WordID expected_id) {
-    std::unique_ptr<Word> word_object = parse_word(word);
-    if (word_object->word_id != expected_id) {
-        throw std::runtime_error("Wrong word type received: wordID = " + std::to_string(word_object->word_id) + ", expected = " + std::to_string(expected_id));
-    }
-}
-
 OCBDataPacket::OCBDataPacket(const std::vector<uint32_t>& words, bool debug) {
     decodeOCBdata(words, debug);
+}
+
+// Print one line per set error bit stored in the OCBDataPacket::ocb_errors member.
+void OCBDataPacket::decode_ocb_errors() const {
+    int n = 0;
+    for (size_t i = 0; i < ocb_errors.size(); ++i) {
+        if (ocb_errors[i]) {
+            std::cerr << "OCB trailer error bit " << i << ": " << OCB_ERROR_MESSAGES[i] << "\n";
+            ++n;
+        }
+    }
+    (void)n; // silence unused warning in case caller doesn't care
 }
 
 void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug) {
@@ -286,6 +330,9 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
     }
 
     event.event_id = ocb_packet_header->event_number;
+    // Store trailer error bits in this packet and report any set errors
+    ocb_errors = ocb_packet_trailer->errors;
+    decode_ocb_errors();
 
     // Check word count and construct FEB data packets
     int global_index = 0;

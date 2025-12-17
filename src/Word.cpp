@@ -193,9 +193,11 @@ void EventDone::print() const {
 
 FEBDataPacketTrailer::FEBDataPacketTrailer(uint32_t raw) : Word(raw, WordID::FEB_DATA_PACKET_TRAILER) {
     board_id = get_bits(raw, 20, 8);
+    artificial_trl2 = get_bits(raw, 19, 1);
     event_done_timeout = get_bits(raw, 18, 1);
     d1_fifo_full = get_bits(raw, 17, 1);
     d0_fifo_full = get_bits(raw, 16, 1);
+    rb_cnt_error = get_bits(raw, 15, 1);
     nb_decoder_errors = get_bits(raw, 0, 15);
 }
 
