@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <ostream>
 
 enum WordID {
     GATE_HEADER = 0x0,
@@ -29,7 +30,12 @@ class Word {
 
         virtual ~Word() = default;
 
-        virtual void print() const = 0;
+        virtual void print(std::ostream& os) const = 0;
+        // Convenience stream operator: calls the virtual print(os)
+        friend std::ostream& operator<<(std::ostream& os, const Word& w) {
+            w.print(os);
+            return os;
+        }
         
 };
 
@@ -43,7 +49,7 @@ class GateHeader : public Word {
 
         GateHeader(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class GTSHeader : public Word {
@@ -52,7 +58,7 @@ class GTSHeader : public Word {
 
         GTSHeader(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class HitTime : public Word {
@@ -61,7 +67,7 @@ class HitTime : public Word {
 
         HitTime(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class HitAmplitude : public Word {
@@ -69,8 +75,8 @@ class HitAmplitude : public Word {
         uint32_t channel_id, hit_id, tag_id, amplitude_id, amplitude_value;
 
     HitAmplitude(uint32_t raw);
-
-    void print() const override;
+    
+    void print(std::ostream& os) const override;
 
 };
 
@@ -80,7 +86,7 @@ class GTSTrailer1 : public Word {
 
         GTSTrailer1(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class GTSTrailer2 : public Word {
@@ -89,7 +95,7 @@ class GTSTrailer2 : public Word {
 
         GTSTrailer2(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class GateTrailer : public Word {
@@ -98,7 +104,7 @@ class GateTrailer : public Word {
 
         GateTrailer(uint32_t raw);
 
-        void print() const override; 
+    void print(std::ostream& os) const override;
 
 };
 
@@ -108,7 +114,7 @@ class GateTime : public Word {
 
         GateTime(uint32_t raw);
 
-        void print() const;
+    void print(std::ostream& os) const;
 };
 
 class OCBPacketHeader : public Word {
@@ -117,7 +123,7 @@ class OCBPacketHeader : public Word {
 
         OCBPacketHeader(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class OCBPacketTrailer : public Word {
@@ -127,7 +133,7 @@ class OCBPacketTrailer : public Word {
 
         OCBPacketTrailer(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class HoldTime : public Word {
@@ -136,7 +142,7 @@ class HoldTime : public Word {
 
         HoldTime(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class EventDone : public Word {
@@ -145,7 +151,7 @@ class EventDone : public Word {
 
         EventDone(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 class FEBDataPacketTrailer : public Word {
@@ -155,7 +161,7 @@ class FEBDataPacketTrailer : public Word {
 
         FEBDataPacketTrailer(uint32_t raw);
 
-        void print() const override;
+    void print(std::ostream& os) const override;
 };
 
 std::unique_ptr<Word> parse_word(uint32_t word);

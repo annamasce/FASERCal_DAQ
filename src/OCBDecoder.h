@@ -7,8 +7,10 @@
 #include <array>
 #include <memory>
 #include <map>
+#include <cstdint>
 #include <iostream>
 #include "Word.h"
+#include <iomanip>
 
 namespace OCBConfig {
     inline constexpr int NUM_GTS_BEFORE_EVENT = 2;
@@ -34,7 +36,7 @@ public:
     HitTimeData(int board, int ch, int hid)
         : board_id(board), channel_id(ch), hit_id(hid) {};
 
-    void print() const;
+    friend std::ostream &operator<<(std::ostream &out, const HitTimeData&data);
 
     // Getters
     int get_board_id()    const { return board_id; }
@@ -79,6 +81,8 @@ public:
         : board_id(board), channel_id(ch), hit_id(hid) {};
 
     void print() const;
+
+    friend std::ostream &operator<<(std::ostream &out, const HitAmplitudeData &data);
 
     // Getters
     int get_board_id()    const { return board_id; }
@@ -220,6 +224,8 @@ public:
         }
         return count;
     }
+
+    friend std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event);
 
 private:
     OCBevent event;

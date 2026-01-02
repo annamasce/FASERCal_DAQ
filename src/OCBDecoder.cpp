@@ -102,30 +102,32 @@ void HitData::print() const {
               << "  Amplitude HG:  " << amplitude_hg << '\n';
 }
 
-void HitTimeData::print() const {
-    std::cout << "Hit time:\n"
-              << "  Board ID:      " << board_id << '\n'
-              << "  Channel ID:    " << channel_id << '\n'
-              << "  Hit ID:        " << hit_id << '\n'
-              << "  GTS tag rise:  " << gts_tag_rise << '\n'
-              << "  Tag ID rise:   " << tag_id_rise << '\n'
-              << "  GTS tag fall:  " << gts_tag_fall << '\n'
-              << "  Tag ID fall:   " << tag_id_fall << '\n'
-              << "  Rise time:     " << hit_time_rise << '\n'
-              << "  Fall time:     " << hit_time_fall << '\n';
+std::ostream &operator<<(std::ostream &out, const HitTimeData &data) {
+    out << "Hit time data:\n"
+              << "  Board ID:      " << data.board_id << '\n'
+              << "  Channel ID:    " << data.channel_id << '\n'
+              << "  Hit ID:        " << data.hit_id << '\n'
+              << "  GTS tag rise:  " << data.gts_tag_rise << '\n'
+              << "  Tag ID rise:   " << data.tag_id_rise << '\n'
+              << "  GTS tag fall:  " << data.gts_tag_fall << '\n'
+              << "  Tag ID fall:   " << data.tag_id_fall << '\n'
+              << "  Rise time:     " << data.hit_time_rise << '\n'
+              << "  Fall time:     " << data.hit_time_fall << '\n';
+    return out;
 }
 
-void HitAmplitudeData::print() const {
-    std::cout << "Hit amplitude:\n"
-              << "  Board ID:      " << board_id << '\n'
-              << "  Channel ID:    " << channel_id << '\n'
-              << "  Hit ID:        " << hit_id << '\n'
-              << "  GTS tag lg:    " << gts_tag_lg << '\n'
-              << "  Tag ID lg:     " << tag_id_lg << '\n'
-              << "  GTS tag hg:    " << gts_tag_hg << '\n'
-              << "  Tag ID hg:     " << tag_id_hg << '\n'
-              << "  Amplitude lg:  " << amplitude_lg << '\n'
-              << "  Amplitude hg:  " << amplitude_hg << '\n';
+std::ostream &operator<<(std::ostream &out, const HitAmplitudeData &data) {
+    out << "Hit amplitude data:\n"
+              << "  Board ID:      " << data.board_id << '\n'
+              << "  Channel ID:    " << data.channel_id << '\n'
+              << "  Hit ID:        " << data.hit_id << '\n'
+              << "  GTS tag lg:    " << data.gts_tag_lg << '\n'
+              << "  Tag ID lg:     " << data.tag_id_lg << '\n'
+              << "  GTS tag hg:    " << data.gts_tag_hg << '\n'
+              << "  Tag ID hg:     " << data.tag_id_hg << '\n'
+              << "  Amplitude lg:  " << data.amplitude_lg << '\n'
+              << "  Amplitude hg:  " << data.amplitude_hg << '\n';
+    return out;
 }
 
 // ---------------- FEBDataPacket ----------------
@@ -312,6 +314,7 @@ void OCBDataPacket::decode_ocb_errors() const {
 }
 
 void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug) {
+    // throw std::runtime_error("Testing error handling in OCBDataPacket::decodeOCBdata");
     if (words.size() < 2) throw std::runtime_error("OCB packet too small");
 
     check_expected_word(words.front(), WordID::OCB_PACKET_HEADER);
@@ -426,4 +429,29 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words, bool debug
         }
         ++global_index;
     }
+}
+
+std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event) {
+        try {
+            out
+            << std::setfill('#')<<std::setw(16)<<" Event ID: "<<std::setfill(' ')<<std::setw(12)<<event.get_event_id()<<std::endl;
+
+            for (size_t board_id = 0; board_id < OCBConfig::NUM_FEBS_PER_OCB; board_id++){
+                if (event.hasData(board_id)) {
+                    auto feb_packet = event[board_id];
+                    out << "FEB " << board_id << " has " << feb_packet.get_hit_times().size() << " decoded time hits, and " 
+                    << feb_packet.get_hit_amplitudes().size() << " decoded amplitude hits." << std::endl;
+                    for (const auto& hit_time : feb_packet.get_hit_times()) {
+                        out << hit_time;
+                    }
+                    for (const auto& hit_amplitude : feb_packet.get_hit_amplitudes()) {
+                        out << hit_amplitude;
+                    }
+                }
+            }
+        } catch (const std::runtime_error& e) {
+            std::cerr << "Runtime error: " << e.what() << '\n';
+        }
+
+        return out;
 }

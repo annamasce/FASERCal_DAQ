@@ -43,7 +43,6 @@ int main(int argc, char** argv) {
     while (in.read(reinterpret_cast<char*>(buf), 4)) {
         uint32_t word = bytes_to_uint32(buf);
         word_list.push_back(word);
-        // parse_word(word)->print();
     }
 
     // Iterate OCB packets inside file
@@ -62,7 +61,7 @@ int main(int argc, char** argv) {
 
             std::vector<uint32_t> ocb_packet_word_list;
             for (int k = start_index; k < index+1; ++k) {
-                parse_word(word_list[k])->print();
+                std::cout << *parse_word(word_list[k]);
                 ocb_packet_word_list.push_back(word_list[k]);
             }
 
@@ -71,23 +70,26 @@ int main(int argc, char** argv) {
 
             // Print contents
             const OCBDataPacket& ev = ocb_packets.back();
-            std::cout << "OCB event " << ev.get_event_id() << " loaded.\n";
-            for (size_t feb = 0; feb < ev.get_Nfebs_in_ocb(); ++feb) {
-                if (!ev.hasData(feb)) continue;
-                std::cout << " FEB " << feb << " present.\nHit times: " << ev[feb].get_hit_times().size() << "\n";
-                for (const auto& hit : ev[feb].get_hit_times()) {
-                    hit.print();
-                }
-                std::cout << "Hit amplitudes: " << ev[feb].get_hit_times().size() << "\n";
-                for (const auto& hit : ev[feb].get_hit_amplitudes()) {
-                    hit.print();
-                }
-            }
+
+            std::cout << ev;
+
+            // std::cout << "OCB event " << ev.get_event_id() << " loaded.\n";
+            // for (size_t feb = 0; feb < ev.get_Nfebs_in_ocb(); ++feb) {
+            //     if (!ev.hasData(feb)) continue;
+            //     std::cout << " FEB " << feb << " present.\nHit times: " << ev[feb].get_hit_times().size() << "\n";
+            //     for (const auto& hit : ev[feb].get_hit_times()) {
+            //         hit.print();
+            //     }
+            //     std::cout << "Hit amplitudes: " << ev[feb].get_hit_times().size() << "\n";
+            //     for (const auto& hit : ev[feb].get_hit_amplitudes()) {
+            //         hit.print();
+            //     }
+            // }
 
             start_index = -1;
         }
 
-        if (ocb_packets.size() > 1) {
+        if (ocb_packets.size() >= 1) {
                 break;  // For testing, process only first OCB packets
             }
 

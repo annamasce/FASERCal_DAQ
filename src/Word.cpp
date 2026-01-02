@@ -42,16 +42,16 @@ GateHeader::GateHeader(uint32_t raw) : Word(raw, WordID::GATE_HEADER) {
             }
 }
 
-void GateHeader::print() const {
-    if( header_type == 0. ) {
-        std::cout << "[" << std::setw(6) << word_id << "]" << " Gate Header Word - Board ID: " << board_id
-                  << ", Gate header: " << header_type
-                  << ", Gate Type: " << gate_type
-                  << ", Gate Number: " << gate_number << "\n";
+void GateHeader::print(std::ostream& os) const {
+    if (header_type == 0) {
+        os << "[" << std::setw(6) << word_id << "]" << " Gate Header Word - Board ID: " << board_id
+           << ", Gate header: " << header_type
+           << ", Gate Type: " << gate_type
+           << ", Gate Number: " << gate_number << "\n";
     } else {
-        std::cout << "[" << std::setw(6) << word_id << "]" << " Gate Header Word - Board ID: " << board_id
-                  << ", Gate header: " << header_type
-                  << ", Gate time: " << gate_time_from_GTS << "\n";
+        os << "[" << std::setw(6) << word_id << "]" << " Gate Header Word - Board ID: " << board_id
+           << ", Gate header: " << header_type
+           << ", Gate time: " << gate_time_from_GTS << "\n";
     }
 }
 
@@ -59,8 +59,8 @@ GTSHeader::GTSHeader(uint32_t raw) : Word(raw, WordID::GTS_HEADER) {
     gts_tag = get_bits(raw, 0, 28);
 }
 
-void GTSHeader::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " GTS Header Word - GTS Tag: " << gts_tag << "\n";
+void GTSHeader::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " GTS Header Word - GTS Tag: " << gts_tag << "\n";
 }
 
 HitTime::HitTime(uint32_t raw) : Word(raw, WordID::HIT_TIME) {
@@ -71,12 +71,12 @@ HitTime::HitTime(uint32_t raw) : Word(raw, WordID::HIT_TIME) {
     hit_time = get_bits(raw, 0, 13);
 }
 
-void HitTime::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " Hit Time Word - Channel ID: " << channel_id
-              << ", Hit ID: " << hit_id
-              << ", Tag ID: " << tag_id
-              << ", Edge: " << edge
-              << ", Timestamp: " << hit_time << "\n";
+void HitTime::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " Hit Time Word - Channel ID: " << channel_id
+       << ", Hit ID: " << hit_id
+       << ", Tag ID: " << tag_id
+       << ", Edge: " << edge
+       << ", Timestamp: " << hit_time << "\n";
 }
 
 HitAmplitude::HitAmplitude(uint32_t raw) : Word(raw, WordID::HIT_AMPLITUDE) {
@@ -87,20 +87,20 @@ HitAmplitude::HitAmplitude(uint32_t raw) : Word(raw, WordID::HIT_AMPLITUDE) {
     amplitude_value = get_bits(raw, 0, 12);
 }
 
-void HitAmplitude::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " Hit Time Word - Channel ID: " << channel_id
-              << ", Hit ID: " << hit_id
-              << ", Tag ID: " << tag_id
-              << ", Amp ID: " << amplitude_id
-              << ", Amplitude: " << amplitude_value << "\n";
+void HitAmplitude::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " Hit Amplitude Word - Channel ID: " << channel_id
+       << ", Hit ID: " << hit_id
+       << ", Tag ID: " << tag_id
+       << ", Amp ID: " << amplitude_id
+       << ", Amplitude: " << amplitude_value << "\n";
 }
 
 GTSTrailer1::GTSTrailer1(uint32_t raw) : Word(raw, WordID::GTS_TRAILER1) {
     gts_tag = get_bits(raw, 0, 28);
 }
 
-void GTSTrailer1::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " GTS Trailer1 Word - GTS Tag: " << gts_tag << "\n";
+void GTSTrailer1::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " GTS Trailer1 Word - GTS Tag: " << gts_tag << "\n";
 }
 
 GTSTrailer2::GTSTrailer2(uint32_t raw) : Word(raw, WordID::GTS_TRAILER2) {
@@ -110,11 +110,11 @@ GTSTrailer2::GTSTrailer2(uint32_t raw) : Word(raw, WordID::GTS_TRAILER2) {
     gts_time = get_bits(raw, 0, 20);
 }
 
-void GTSTrailer2::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " GTS Trailer 2 Word - Data: " << data
-              << ", OCB busy: " << ocb_busy
-              << ", FEB busy: " << feb_busy 
-              << ", GTS Time: " << gts_time << "\n";
+void GTSTrailer2::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " GTS Trailer 2 Word - Data: " << data
+       << ", OCB busy: " << ocb_busy
+       << ", FEB busy: " << feb_busy 
+       << ", GTS Time: " << gts_time << "\n";
 }
 
 GateTrailer::GateTrailer(uint32_t raw) : Word(raw, WordID::GATE_TRAILER) {
@@ -123,18 +123,18 @@ GateTrailer::GateTrailer(uint32_t raw) : Word(raw, WordID::GATE_TRAILER) {
     gate_number = get_bits(raw, 0, 16);
 }
 
-void GateTrailer::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " Gate Trailer Word - Board ID: " << board_id
-              << ", Gate Type: " << gate_type
-              << ", Gate Number: " << gate_number << "\n";
+void GateTrailer::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " Gate Trailer Word - Board ID: " << board_id
+       << ", Gate Type: " << gate_type
+       << ", Gate Number: " << gate_number << "\n";
 }     
 
 GateTime::GateTime(uint32_t raw) : Word(raw, WordID::GATE_TIME) {
     gate_time = get_bits(raw, 0, 28);
 }
 
-void GateTime::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " Gate Time Word - Gate time: " << gate_time << "\n";
+void GateTime::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " Gate Time Word - Gate time: " << gate_time << "\n";
 }
 
 OCBPacketHeader::OCBPacketHeader(uint32_t raw) : Word(raw, WordID::OCB_PACKET_HEADER) {
@@ -143,10 +143,10 @@ OCBPacketHeader::OCBPacketHeader(uint32_t raw) : Word(raw, WordID::OCB_PACKET_HE
     event_number = get_bits(raw, 0, 23);
 }
 
-void OCBPacketHeader::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " OCB Packet Header Word - Gate type: " << gate_type
-            << ", Gate Tag: " << gate_tag
-            << ", Event number: " << event_number << "\n";
+void OCBPacketHeader::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " OCB Packet Header Word - Gate type: " << gate_type
+       << ", Gate Tag: " << gate_tag
+       << ", Event number: " << event_number << "\n";
 }
 
 OCBPacketTrailer::OCBPacketTrailer(uint32_t raw) : Word(raw, WordID::OCB_PACKET_TRAILER) {
@@ -157,14 +157,14 @@ OCBPacketTrailer::OCBPacketTrailer(uint32_t raw) : Word(raw, WordID::OCB_PACKET_
     }
 }
 
-void OCBPacketTrailer::print() const {
+void OCBPacketTrailer::print(std::ostream& os) const {
     int n_errors = 0;
     for (size_t i = 0; i < errors.size(); i++) {
         if (errors[i]) n_errors += 1;
     }
-    std::cout << "[" << std::setw(6) << word_id << "]" << " OCB Packet Trailer Word - Gate type: " << gate_type
-            << ", Gate Tag: " << gate_tag
-            << ", Number of errors: " << n_errors << "\n";
+    os << "[" << std::setw(6) << word_id << "]" << " OCB Packet Trailer Word - Gate type: " << gate_type
+       << ", Gate Tag: " << gate_tag
+       << ", Number of errors: " << n_errors << "\n";
 }
 
 HoldTime::HoldTime(uint32_t raw) : Word(raw, WordID::HOLD_TIME) {
@@ -173,10 +173,10 @@ HoldTime::HoldTime(uint32_t raw) : Word(raw, WordID::HOLD_TIME) {
     hold_time = get_bits(raw, 0, 11);
 }
 
-void HoldTime::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " HOLD Time Word - Board ID: " << board_id
-                << ", Header Type (start/stop): " << header_type
-                << ", HOLD time: " << hold_time << "\n";
+void HoldTime::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " HOLD Time Word - Board ID: " << board_id
+       << ", Header Type (start/stop): " << header_type
+       << ", HOLD time: " << hold_time << "\n";
 }
 
 EventDone::EventDone(uint32_t raw) : Word(raw, WordID::EVENT_DONE) {
@@ -185,10 +185,10 @@ EventDone::EventDone(uint32_t raw) : Word(raw, WordID::EVENT_DONE) {
     word_count = get_bits(raw, 0, 16);
 }
 
-void EventDone::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << "Event Done Word - Board ID: " << board_id 
-                << ", Gate Number (4LSB): " << gate_number
-                << ", Word Count: " << word_count << "\n";
+void EventDone::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << "Event Done Word - Board ID: " << board_id 
+       << ", Gate Number (4LSB): " << gate_number
+       << ", Word Count: " << word_count << "\n";
 }
 
 FEBDataPacketTrailer::FEBDataPacketTrailer(uint32_t raw) : Word(raw, WordID::FEB_DATA_PACKET_TRAILER) {
@@ -201,8 +201,8 @@ FEBDataPacketTrailer::FEBDataPacketTrailer(uint32_t raw) : Word(raw, WordID::FEB
     nb_decoder_errors = get_bits(raw, 0, 15);
 }
 
-void FEBDataPacketTrailer::print() const {
-    std::cout << "[" << std::setw(6) << word_id << "]" << " FEB Data Packet Trailer - Board ID: " << board_id << "\n";
+void FEBDataPacketTrailer::print(std::ostream& os) const {
+    os << "[" << std::setw(6) << word_id << "]" << " FEB Data Packet Trailer - Board ID: " << board_id << "\n";
 }
 // ----------------------
 // FACTORY
