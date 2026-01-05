@@ -37,70 +37,70 @@ OCBevent::OCBevent() {
 
 // ---------------- HitData ----------------
 
-HitData::HitData(int board, int gts, const std::vector<uint32_t>& words)
-    : board_id(board), gts_tag(gts)
-{
-    if (words.size() != 4) {
-        std::cerr << "Warning: hit data packet size != 4 (size = " << words.size() << ")\n";
-    }
+// HitData::HitData(int board, int gts, const std::vector<uint32_t>& words)
+//     : board_id(board), gts_tag(gts)
+// {
+//     if (words.size() != 4) {
+//         std::cerr << "Warning: hit data packet size != 4 (size = " << words.size() << ")\n";
+//     }
 
-    for (uint32_t raw : words) {
-        std::unique_ptr<Word> w = parse_word(raw);
+//     for (uint32_t raw : words) {
+//         std::unique_ptr<Word> w = parse_word(raw);
 
-        switch (w->word_id) {
-            case WordID::HIT_TIME: {
-                auto* ht = static_cast<HitTime*>(w.get());
-                validate_ids(ht->channel_id, ht->hit_id);
+//         switch (w->word_id) {
+//             case WordID::HIT_TIME: {
+//                 auto* ht = static_cast<HitTime*>(w.get());
+//                 validate_ids(ht->channel_id, ht->hit_id);
 
-                if (ht->edge == 0)
-                    hit_time_rise = ht->hit_time;
-                else
-                    hit_time_fall = ht->hit_time;
-                break;
-            }
+//                 if (ht->edge == 0)
+//                     hit_time_rise = ht->hit_time;
+//                 else
+//                     hit_time_fall = ht->hit_time;
+//                 break;
+//             }
 
-            case WordID::HIT_AMPLITUDE: {
-                auto* ha = static_cast<HitAmplitude*>(w.get());
-                validate_ids(ha->channel_id, ha->hit_id);
+//             case WordID::HIT_AMPLITUDE: {
+//                 auto* ha = static_cast<HitAmplitude*>(w.get());
+//                 validate_ids(ha->channel_id, ha->hit_id);
 
-                if (ha->amplitude_id == 2)
-                    amplitude_hg = ha->amplitude_value;
-                else
-                    amplitude_lg = ha->amplitude_value;
-                break;
-            }
+//                 if (ha->amplitude_id == 2)
+//                     amplitude_hg = ha->amplitude_value;
+//                 else
+//                     amplitude_lg = ha->amplitude_value;
+//                 break;
+//             }
 
-            default:
-                throw std::runtime_error(
-                    "Invalid word encountered in hit data: WordID = " +
-                    std::to_string(w->word_id));
-        }
-    }
-}
+//             default:
+//                 throw std::runtime_error(
+//                     "Invalid word encountered in hit data: WordID = " +
+//                     std::to_string(w->word_id));
+//         }
+//     }
+// }
 
-void HitData::validate_ids(int ch, int hid) {
-    if (channel_id < 0) {
-        channel_id = ch;
-        hit_id     = hid;
-        return;
-    }
+// void HitData::validate_ids(int ch, int hid) {
+//     if (channel_id < 0) {
+//         channel_id = ch;
+//         hit_id     = hid;
+//         return;
+//     }
 
-    if (ch != channel_id || hid != hit_id) {
-        throw std::runtime_error("Inconsistent hit data: channel_id or hit_id mismatch");
-    }
-}
+//     if (ch != channel_id || hid != hit_id) {
+//         throw std::runtime_error("Inconsistent hit data: channel_id or hit_id mismatch");
+//     }
+// }
 
-void HitData::print() const {
-    std::cout << "Hit:\n"
-              << "  GTS tag:       " << gts_tag << '\n'
-              << "  Board ID:      " << board_id << '\n'
-              << "  Channel ID:    " << channel_id << '\n'
-              << "  Hit ID:        " << hit_id << '\n'
-              << "  Rise time:     " << hit_time_rise << '\n'
-              << "  Fall time:     " << hit_time_fall << '\n'
-              << "  Amplitude LG:  " << amplitude_lg << '\n'
-              << "  Amplitude HG:  " << amplitude_hg << '\n';
-}
+// void HitData::print() const {
+//     std::cout << "Hit:\n"
+//               << "  GTS tag:       " << gts_tag << '\n'
+//               << "  Board ID:      " << board_id << '\n'
+//               << "  Channel ID:    " << channel_id << '\n'
+//               << "  Hit ID:        " << hit_id << '\n'
+//               << "  Rise time:     " << hit_time_rise << '\n'
+//               << "  Fall time:     " << hit_time_fall << '\n'
+//               << "  Amplitude LG:  " << amplitude_lg << '\n'
+//               << "  Amplitude HG:  " << amplitude_hg << '\n';
+// }
 
 std::ostream &operator<<(std::ostream &out, const HitTimeData &data) {
     out << "Hit time data:\n"
@@ -163,12 +163,22 @@ FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words) {
     decodeFEBdata(words);
 }
 
+int FEBDataPacket::find_matching_gts_tag(uint32_t tag_id, std::vector<uint32_t>& gts_tags) const {
+    // Find latest GTS tag whose 2 LS bits match those of tag_id
+    constexpr int TAG_MASK = 0x3;
+    for (auto gts_tag = gts_tags.rbegin(); gts_tag != gts_tags.rend(); ++gts_tag) {
+        if ((*gts_tag & TAG_MASK) == (tag_id & TAG_MASK)) {
+            return *gts_tag;
+        }
+    }
+    return -1; // no matching GTS tag found
+}
+
 void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
 
     std::vector<uint32_t> gts_tags;
     std::map<HitTimeKey, HitTimeData> hit_times_map;
     std::map<uint32_t, HitAmplitudeData> hit_amplitudes_map; // map channel id to hit amplitude data
-    // constexpr int TAG_MASK = 0x3;
 
     for (auto& w : words) {
         std::unique_ptr<Word> base = parse_word(w);
@@ -188,45 +198,50 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
                 // Rising edge
                 auto [it, inserted] = hit_times_map.try_emplace(key, board_id, channel_id, hit_id);
 
-                // If not inserted, means second rising edge detected before falling edge
                 if (!inserted) {
-                    throw std::runtime_error(
-                        "Rising edge received twice for same hit (channel_id=" +
-                        std::to_string(channel_id) +
-                        ", hit_id=" +
-                        std::to_string(hit_id) + ")"
-                    );
+                    // If not inserted, means second rising edge detected before falling edge
+                    // This should never happen
+                    std::cerr << "Rising edge received twice for same channel_id=" << std::to_string(channel_id) << 
+                        " and hit_id=" << std::to_string(hit_id) << "\n";
                 }
-                // Fill rising time info for the hit
-                auto& h = it->second;
-                h.set_hit_time_rise(hit->hit_time);
-                h.set_tag_id_rise(hit->tag_id);
-                h.set_gts_tag_rise(gts_tags.back());
+                else {
+                    // Fill rising time info for the hit
+                    auto& h = it->second;
+                    h.set_hit_time_rise(hit->hit_time);
+                    h.set_tag_id_rise(hit->tag_id);
+                    h.set_gts_tag_rise_received(gts_tags.back());
+                    h.set_gts_tag_rise(find_matching_gts_tag(hit->tag_id, gts_tags));
+                }
             }
             else {
                 // Falling edge
                 auto it = hit_times_map.find(key);
                 if (it == hit_times_map.end()) {
                     // Rising edge must be received before falling edge
-                    throw std::runtime_error(
-                        "Falling edge received before rising edge for hit (channel_id=" +
-                        std::to_string(channel_id) +
-                        ", hit_id=" +
-                        std::to_string(hit_id) + ")"
-                    );
+                    std::cerr << "Falling edge received before rising edge for channel_id=" << std::to_string(channel_id) 
+                    << " and hit_id=" << std::to_string(hit_id) << "\n";
                 }
+                else if (it->second.get_hit_time_fall() != -1) {
+                    // Falling edge already received for this hit
+                    std::cerr << "Falling edge received twice for same channel_id=" << std::to_string(channel_id) << 
+                        " and hit_id=" << std::to_string(hit_id) << "\n";
+                }
+                else {
+                    // Fill falling time info for the hit
+                    auto& h = it->second;
+                    h.set_hit_time_fall(hit->hit_time);
+                    h.set_tag_id_fall(hit->tag_id);
+                    h.set_gts_tag_fall_received(gts_tags.back());
+                    h.set_gts_tag_fall(find_matching_gts_tag(hit->tag_id, gts_tags));
 
-                // Fill falling time info for the hit
-                auto& h = it->second;
-                h.set_hit_time_fall(hit->hit_time);
-                h.set_tag_id_fall(hit->tag_id);
-                h.set_gts_tag_fall(gts_tags.back());
+                    // #### All this should be removed with data!!!
+                    // Save hit time data
+                    _hit_times.push_back(std::move(h));
 
-                // Save hit time data
-                _hit_times.push_back(std::move(h));
-                // Remove from map
-                hit_times_map.erase(key);
-
+                    // Remove from map -> necessary for the simulation because of bug on hit_id in the simulation
+                    hit_times_map.erase(key);
+                    // ####
+                }
             }
         }
 
@@ -240,24 +255,26 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
             if (hit->amplitude_id == 2) {
                 // Amplitude HG
                 if (!inserted && h.get_amplitude_hg() != -1) {
-                    throw std::runtime_error(
-                        "High Gain Amplitude received twice for same channel (channel_id=" + std::to_string(channel_id) + ")"
-                    );
+                    std::cerr << "High Gain Amplitude received twice for same channel: channel_id=" << std::to_string(channel_id) <<"\n";
                 }
-                h.set_amplitude_hg(hit->amplitude_value);
-                h.set_tag_id_hg(hit->tag_id);
-                h.set_gts_tag_hg(gts_tags.back());
+                else {
+                    h.set_amplitude_hg(hit->amplitude_value);
+                    h.set_tag_id_hg(hit->tag_id);
+                    h.set_gts_tag_hg_received(gts_tags.back());
+                    h.set_gts_tag_hg(find_matching_gts_tag(hit->tag_id, gts_tags));
+                }
             }
             else {
                 // Amplitude LG
                 if (!inserted && h.get_amplitude_lg() != -1) {
-                    throw std::runtime_error(
-                        "Low Gain Amplitude received twice for same channel (channel_id=" + std::to_string(channel_id) + ")"
-                    );
+                    std::cerr << "Low Gain Amplitude received twice for same channel: channel_id=" << std::to_string(channel_id) << "\n";
                 }
-                h.set_amplitude_lg(hit->amplitude_value);
-                h.set_tag_id_lg(hit->tag_id);
-                h.set_gts_tag_lg(gts_tags.back());
+                else {
+                    h.set_amplitude_lg(hit->amplitude_value);
+                    h.set_tag_id_lg(hit->tag_id);
+                    h.set_gts_tag_lg_received(gts_tags.back());
+                    h.set_gts_tag_lg(find_matching_gts_tag(hit->tag_id, gts_tags));
+                }
             }
         }
 
@@ -283,7 +300,7 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
         }
     }
 
-    // Move completed hits into the vector in FEBDataPacket
+    // Move completed hits into the vectors in FEBDataPacket
     _hit_times.reserve(hit_times_map.size());
     for (auto& [key, hit] : hit_times_map) {
         _hit_times.push_back(std::move(hit));

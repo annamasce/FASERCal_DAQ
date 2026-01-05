@@ -44,6 +44,8 @@ public:
     int get_hit_id()      const { return hit_id; }
     int get_gts_tag_rise() const { return gts_tag_rise; }
     int get_gts_tag_fall() const { return gts_tag_fall; }
+    int get_gts_tag_rise_received() const { return gts_tag_rise_received; }
+    int get_gts_tag_fall_received() const { return gts_tag_fall_received; }
     int get_tag_id_rise() const { return tag_id_rise; }
     int get_tag_id_fall() const { return tag_id_fall; }
     int get_hit_time_rise() const { return hit_time_rise; }
@@ -52,6 +54,8 @@ public:
     // Setters
     void set_gts_tag_rise(int tag) { gts_tag_rise = tag; }
     void set_gts_tag_fall(int tag) { gts_tag_fall = tag; }
+    void set_gts_tag_rise_received(int tag) { gts_tag_rise_received = tag; }
+    void set_gts_tag_fall_received(int tag) { gts_tag_fall_received = tag; }
     void set_tag_id_rise(int tag) { tag_id_rise = tag; }
     void set_tag_id_fall(int tag) { tag_id_fall = tag; }
     void set_hit_time_rise(int time) { hit_time_rise = time; }
@@ -63,8 +67,11 @@ private:
     int hit_id       = -1;
 
     // current GTS tags when rising and falling edges are received
-    int gts_tag_rise      = -1;
-    int gts_tag_fall      = -1;
+    int gts_tag_rise_received      = -1;
+    int gts_tag_fall_received      = -1;
+    // correct GTS tags of rising and falling edges
+    int gts_tag_rise = -1;
+    int gts_tag_fall = -1;
     // tag IDs of rising and falling edges: allow matching with correct GTS tags 
     int tag_id_rise      = -1;
     int tag_id_fall      = -1;
@@ -88,6 +95,8 @@ public:
     int get_board_id()    const { return board_id; }
     int get_channel_id()  const { return channel_id; }
     int get_hit_id()      const { return hit_id; }
+    int get_gts_tag_lg_received() const { return gts_tag_lg_received; }
+    int get_gts_tag_hg_received() const { return gts_tag_hg_received; }
     int get_gts_tag_lg()     const { return gts_tag_lg; }
     int get_gts_tag_hg()     const { return gts_tag_hg; } 
     int get_tag_id_lg()      const { return tag_id_lg; }
@@ -98,6 +107,8 @@ public:
     // Setters
     void set_gts_tag_lg(int tag) { gts_tag_lg = tag; }
     void set_gts_tag_hg(int tag) { gts_tag_hg = tag; }
+    void set_gts_tag_lg_received(int tag) { gts_tag_lg_received = tag; }
+    void set_gts_tag_hg_received(int tag) { gts_tag_hg_received = tag; }
     void set_tag_id_lg(int tag) { tag_id_lg = tag; }
     void set_tag_id_hg(int tag) { tag_id_hg = tag; }
     void set_amplitude_lg(int amp) { amplitude_lg = amp; }
@@ -109,6 +120,9 @@ private:
     int hit_id       = -1;
 
     // current GTS tags when amplitude lg and hg are received
+    int gts_tag_lg_received      = -1;
+    int gts_tag_hg_received      = -1;
+    // correct GTS tags of amplitude lg and hg 
     int gts_tag_lg      = -1;
     int gts_tag_hg      = -1;
     // tag IDs of amplitude lg and hg: allow matching with correct GTS tags 
@@ -119,50 +133,61 @@ private:
     int amplitude_hg = -1;
 };
 
-class HitData {
-public:
+// class HitData {
+// public:
 
-    // Construct from board id, GTS tag, channel id and hit id
-    HitData(int board, int gts, int ch, int hid)
-        : board_id(board), gts_tag(gts), channel_id(ch), hit_id(hid) {};
+//     // Construct from board id, GTS tag, channel id and hit id
+//     HitData(int board, int gts, int ch, int hid)
+//         : board_id(board), gts_tag(gts), channel_id(ch), hit_id(hid) {};
 
-    // Construct from a list of raw 32-bit words that belong to the same hit
-    HitData(int board, int gts, const std::vector<uint32_t>& words);
+//     // Construct from a list of raw 32-bit words that belong to the same hit
+//     HitData(int board, int gts, const std::vector<uint32_t>& words);
 
-    void print() const;
+//     void print() const;
 
-    // Getters
-    int get_board_id()    const { return board_id; }
-    int get_gts_tag()     const { return gts_tag; } 
-    int get_channel_id()  const { return channel_id; }
-    int get_hit_id()      const { return hit_id; }
-    int get_hit_time_rise() const { return hit_time_rise; }
-    int get_hit_time_fall() const { return hit_time_fall; }
-    int get_amplitude_lg()  const { return amplitude_lg; }
-    int get_amplitude_hg()  const { return amplitude_hg; }
+//     // Getters
+//     int get_board_id()    const { return board_id; }
+//     int get_gts_tag()     const { return gts_tag; } 
+//     int get_channel_id()  const { return channel_id; }
+//     int get_hit_id()      const { return hit_id; }
+//     int get_hit_time_rise() const { return hit_time_rise; }
+//     int get_hit_time_fall() const { return hit_time_fall; }
+//     int get_amplitude_lg()  const { return amplitude_lg; }
+//     int get_amplitude_hg()  const { return amplitude_hg; }
 
-    // Setters
-    void set_hit_time_rise(int time) { hit_time_rise = time; }
-    void set_hit_time_fall(int time) { hit_time_fall = time; }
-    void set_amplitude_lg(int amp)   { amplitude_lg  = amp; }
-    void set_amplitude_hg(int amp)   { amplitude_hg  = amp; }
+//     // Setters
+//     void set_hit_time_rise(int time) { hit_time_rise = time; }
+//     void set_hit_time_fall(int time) { hit_time_fall = time; }
+//     void set_amplitude_lg(int amp)   { amplitude_lg  = amp; }
+//     void set_amplitude_hg(int amp)   { amplitude_hg  = amp; }
 
-private:
-    int board_id     = -1;
-    int gts_tag      = -1;
+// private:
+//     int board_id     = -1;
+//     int gts_tag      = -1;
 
-    int channel_id   = -1;
-    int hit_id       = -1;
+//     int channel_id   = -1;
+//     int hit_id       = -1;
 
-    int hit_time_rise = -1;
-    int hit_time_fall = -1;
-    int amplitude_lg  = -1;
-    int amplitude_hg  = -1;
+//     int hit_time_rise = -1;
+//     int hit_time_fall = -1;
+//     int amplitude_lg  = -1;
+//     int amplitude_hg  = -1;
 
-    void validate_ids(int ch, int hid);
-};
+//     void validate_ids(int ch, int hid);
+// };
 
 class FEBDataPacket {
+public:
+    int board_id = -1;
+    int hold_time = -1;
+
+    FEBDataPacket(const std::vector<uint32_t>& words);
+
+    // const std::vector<HitData>& get_hits() const { return _hits; }
+    const std::vector<HitTimeData>& get_hit_times() const { return _hit_times; }
+    const std::vector<HitAmplitudeData>& get_hit_amplitudes() const { return _hit_amplitudes; }
+    int find_matching_gts_tag(uint32_t tag_id, std::vector<uint32_t>& gts_tags) const;
+
 private:
     // std::vector<HitData> _hits;
     std::vector<HitTimeData> _hit_times;
@@ -174,18 +199,6 @@ private:
     bool d0_fifo_full = false;
     bool rb_cnt_error = false;
     int nb_decoder_errors = 0;
-
-public:
-    int board_id = -1;
-    int hold_time = -1;
-
-    FEBDataPacket(const std::vector<uint32_t>& words);
-
-    // const std::vector<HitData>& get_hits() const { return _hits; }
-    const std::vector<HitTimeData>& get_hit_times() const { return _hit_times; }
-    const std::vector<HitAmplitudeData>& get_hit_amplitudes() const { return _hit_amplitudes; }
-
-private:
     void decodeFEBdata(const std::vector<uint32_t>& words);
     // void extract_hits_from_gts(int gts_tag, const std::vector<uint32_t>& block);
 };
