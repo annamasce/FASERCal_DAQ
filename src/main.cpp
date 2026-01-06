@@ -89,9 +89,9 @@ int main(int argc, char** argv) {
             start_index = -1;
         }
 
-        if (ocb_packets.size() >= 1) {
-                break;  // For testing, process only first OCB packets
-            }
+        // if (ocb_packets.size() >= 1) {
+        //         break;  // For testing, process only first OCB packets
+        //     }
 
         ++index;
     }

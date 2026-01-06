@@ -133,49 +133,6 @@ private:
     int amplitude_hg = -1;
 };
 
-// class HitData {
-// public:
-
-//     // Construct from board id, GTS tag, channel id and hit id
-//     HitData(int board, int gts, int ch, int hid)
-//         : board_id(board), gts_tag(gts), channel_id(ch), hit_id(hid) {};
-
-//     // Construct from a list of raw 32-bit words that belong to the same hit
-//     HitData(int board, int gts, const std::vector<uint32_t>& words);
-
-//     void print() const;
-
-//     // Getters
-//     int get_board_id()    const { return board_id; }
-//     int get_gts_tag()     const { return gts_tag; } 
-//     int get_channel_id()  const { return channel_id; }
-//     int get_hit_id()      const { return hit_id; }
-//     int get_hit_time_rise() const { return hit_time_rise; }
-//     int get_hit_time_fall() const { return hit_time_fall; }
-//     int get_amplitude_lg()  const { return amplitude_lg; }
-//     int get_amplitude_hg()  const { return amplitude_hg; }
-
-//     // Setters
-//     void set_hit_time_rise(int time) { hit_time_rise = time; }
-//     void set_hit_time_fall(int time) { hit_time_fall = time; }
-//     void set_amplitude_lg(int amp)   { amplitude_lg  = amp; }
-//     void set_amplitude_hg(int amp)   { amplitude_hg  = amp; }
-
-// private:
-//     int board_id     = -1;
-//     int gts_tag      = -1;
-
-//     int channel_id   = -1;
-//     int hit_id       = -1;
-
-//     int hit_time_rise = -1;
-//     int hit_time_fall = -1;
-//     int amplitude_lg  = -1;
-//     int amplitude_hg  = -1;
-
-//     void validate_ids(int ch, int hid);
-// };
-
 class FEBDataPacket {
 public:
     int board_id = -1;
@@ -189,7 +146,6 @@ public:
     int find_matching_gts_tag(uint32_t tag_id, std::vector<uint32_t>& gts_tags) const;
 
 private:
-    // std::vector<HitData> _hits;
     std::vector<HitTimeData> _hit_times;
     std::vector<HitAmplitudeData> _hit_amplitudes;
     std::map<uint32_t, uint32_t> _gts_tag_map; // map GTS tag to GTS time in FEB data packet
@@ -200,13 +156,16 @@ private:
     bool rb_cnt_error = false;
     int nb_decoder_errors = 0;
     void decodeFEBdata(const std::vector<uint32_t>& words);
-    // void extract_hits_from_gts(int gts_tag, const std::vector<uint32_t>& block);
 };
 
 struct OCBevent {
     uint32_t event_id;
     // FEBs' indices assumed 0...NUM_FEB_PER_OCB; nullptr for missing FEBs.
     std::array<std::shared_ptr<FEBDataPacket>, OCBConfig::NUM_FEBS_PER_OCB> febs;
+    // Error bits extracted from the OCB packet trailer (16 bits)
+    std::array<bool, 16> ocb_errors{false};
+    // per-FEB flag for corrupted FEB data packet: missing header or trailer
+    std::array<bool, OCBConfig::NUM_FEBS_PER_OCB> currupted_feb_errors{false};
 
     OCBevent();
 };
@@ -218,12 +177,19 @@ public:
 
     uint32_t get_event_id() const { return event.event_id; }
 
-    // Access decoded OCB trailer error bits (16 flags). Call
-    // `decode_ocb_errors()` to print human-readable messages for any set bits.
-    const std::array<bool,16>& get_ocb_errors() const { return ocb_errors; }
-
+    // Access decoded OCB trailer error bits (16 flags)
+    const std::array<bool, 16>& get_ocb_errors() const { return event.ocb_errors; }
     // Print messages for any OCB errors stored in this packet's `ocb_errors`.
-    void decode_ocb_errors() const;
+    bool has_ocb_errors() const {
+        for (const auto& err : event.ocb_errors) {
+            if (err) return true;
+        }
+        return false;
+    }
+
+    // Access corrupted FEB data packet flags
+    const std::array<bool, OCBConfig::NUM_FEBS_PER_OCB>& get_corrupted_feb_errors() const { return event.currupted_feb_errors; }
+    bool isCorruptedFEB(size_t board_id) const { return event.currupted_feb_errors[board_id]; }
 
     const FEBDataPacket& get_feb(size_t board_id) const { return *(event.febs[board_id]); }
     const FEBDataPacket& operator[](size_t board_id) const { return *(event.febs[board_id]); }
@@ -238,13 +204,23 @@ public:
         return count;
     }
 
+    // Add error messages
+    void add_corrupted_feb_error(size_t board_id) {
+        if ((board_id >= 0) && (board_id < OCBConfig::NUM_FEBS_PER_OCB)) {
+            event.currupted_feb_errors[board_id] = true;
+        }
+        else {
+            if (m_debug) std::cerr << "Error: trying to add corrupted FEB error for invalid board id " << board_id << "\n";
+        }
+    }
+
+
     friend std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event);
 
 private:
     OCBevent event;
-    void decodeOCBdata(const std::vector<uint32_t>& words, bool debug);
-    // Error bits extracted from the OCB packet trailer (16 bits)
-    std::array<bool,16> ocb_errors{};
+    bool m_debug;
+    void decodeOCBdata(const std::vector<uint32_t>& words);
 };
 
 #endif // OCBDECODER_H
