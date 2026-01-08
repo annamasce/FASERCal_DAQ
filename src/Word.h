@@ -156,8 +156,8 @@ class EventDone : public Word {
 
 class FEBDataPacketTrailer : public Word {
     public:
-        uint_fast32_t board_id, nb_decoder_errors;
-        bool artificial_trl2, event_done_timeout, d1_fifo_full, d0_fifo_full, rb_cnt_error;
+        uint32_t board_id, nb_decoder_errors;
+        bool rb_wr_error, event_done_timeout, l1_fifo_full, l0_fifo_full;
 
         FEBDataPacketTrailer(uint32_t raw);
 

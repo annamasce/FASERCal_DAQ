@@ -3,14 +3,6 @@
 // #include <map>
 #include <array>
 
-
-void check_expected_word(uint32_t word, WordID expected_id) {
-    std::unique_ptr<Word> word_object = parse_word(word);
-    if (word_object->word_id != expected_id) {
-        throw std::runtime_error("Wrong word type received: wordID = " + std::to_string(word_object->word_id) + ", expected = " + std::to_string(expected_id));
-    }
-}
-
 // Human-readable descriptions for the 16 OCB trailer error bits.
 static const char* OCB_ERROR_MESSAGES[16] = {
     "FEB data packet 0 error",
@@ -64,26 +56,42 @@ std::ostream &operator<<(std::ostream &out, const HitAmplitudeData &data) {
 }
 
 // ---------------- FEBDataPacket ----------------
-FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words) {
-    if (words.empty())
-        throw std::runtime_error("Empty FEBDataPacket words");
+FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words, bool debug) {
+    m_debug = debug;
 
-    check_expected_word(words.front(), WordID::GATE_HEADER);
-    check_expected_word(words.back(),  WordID::FEB_DATA_PACKET_TRAILER);
+    if (words.size() < 2) {
+        if (m_debug) std::cerr << "FEB data packet too small";
+        is_corrupted = true;
+        return;
+    }
 
+    // Check that first word corresponds to Gate header
     std::unique_ptr<Word> header_word = parse_word(words.front());
-    std::unique_ptr<Word> trailer_word = parse_word(words.back());
+    if (header_word->word_id != WordID::GATE_HEADER) {
+        if (m_debug) std::cerr << "Missing Gate Header";
+        is_corrupted = true;
+        return;
+    }
+    // Get board_id from Gate header
     auto* gate_header  = dynamic_cast<GateHeader*>(header_word.get());
-    auto* feb_packet_trailer = dynamic_cast<FEBDataPacketTrailer*>(trailer_word.get());
-
     board_id = gate_header->board_id;
-    // decode FEB packet trailer info
+
+    // Check that last word corresponds to FEB data packet trailer
+    std::unique_ptr<Word> trailer_word = parse_word(words.back());
+    if (trailer_word->word_id != WordID::FEB_DATA_PACKET_TRAILER) {
+        if (m_debug) std::cerr << "Missing FEB Data Packet Trailer";
+        is_corrupted = true;
+        return;
+    }
+
+    // Store error bits from FEB Data Packet trailer
+    auto* feb_packet_trailer = dynamic_cast<FEBDataPacketTrailer*>(trailer_word.get());
     nb_decoder_errors = feb_packet_trailer->nb_decoder_errors;
-    artificial_trl2 = feb_packet_trailer->artificial_trl2;
-    event_done_timeout = feb_packet_trailer->event_done_timeout;
-    d1_fifo_full = feb_packet_trailer->d1_fifo_full;
-    d0_fifo_full = feb_packet_trailer->d0_fifo_full;
-    rb_cnt_error = feb_packet_trailer->rb_cnt_error;
+    if (nb_decoder_errors > 0) has_feb_errors = true;
+    if (feb_packet_trailer->rb_wr_error) addError(FEBDataPacketErrors::rb_wr_err);
+    if (feb_packet_trailer->event_done_timeout) addError(FEBDataPacketErrors::event_done_timeout);
+    if (feb_packet_trailer->l1_fifo_full) addError(FEBDataPacketErrors::l1_fifo_full);
+    if (feb_packet_trailer->l0_fifo_full) addError(FEBDataPacketErrors::l0_fifo_full);
 
     // optional hold_time
     if (words.size() > 1 && parse_word(words.at(1))->word_id == WordID::HOLD_TIME){
@@ -107,6 +115,11 @@ int FEBDataPacket::find_matching_gts_tag(uint32_t tag_id, std::vector<uint32_t>&
     return -1; // no matching GTS tag found
 }
 
+void FEBDataPacket::addError(unsigned int err){
+    has_feb_errors = true;
+    feb_errors.push_back(err);
+}
+
 void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
 
     std::vector<uint32_t> gts_tags;
@@ -120,8 +133,8 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
 
         if (id == WordID::GTS_HEADER) {
             if (open_gts_packet) {
-                std::cerr << "Missing GTS Trailer before new GTS Header in FEB" << board_id << "\n";
-                // std::cerr << "New GTS Header received before previous GTS packet was closed in FEB" << board_id << "\n";
+                if (m_debug) std::cerr << "Missing GTS Trailer before new GTS Header in FEB" << board_id << "\n";
+                has_missing_gts = true;
             }
             auto* gts_header = static_cast<GTSHeader*>(base.get());
             gts_tags.push_back(gts_header->gts_tag);
@@ -220,12 +233,14 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
         else if (id == WordID::GTS_TRAILER1) {
             if (!open_gts_packet) {
                 std::cerr << "Missing GTS Header in FEB" << board_id << "\n";
+                has_missing_gts = true;
             }
             // Check that GTS tag matches the last GTS header
             auto* gts_trailer1 = static_cast<GTSTrailer1*>(base.get());
             int current_gts_tag = gts_tags.empty() ? -1 : gts_tags.back();
             if (current_gts_tag != (int)gts_trailer1->gts_tag) {
-                std::cerr << "GTS Trailer does not match GTS header in FEB" << board_id << "\n";
+                if (m_debug) std::cerr << "GTS Trailer does not match GTS header in FEB" << board_id << "\n";
+                has_missing_gts = true;
                 gts_tags.push_back(gts_trailer1->gts_tag); // still add it to avoid desync
             }
         }
@@ -239,6 +254,12 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
             }
             open_gts_packet = false;
         }
+    }
+
+    // Check that last GTS trailer was received
+    if (open_gts_packet) {
+        if (m_debug) std::cerr << "Missing GTS Trailer in FEB" << board_id << "\n";   
+        has_missing_gts = true;
     }
 
     // Move completed hits into the vectors in FEBDataPacket
@@ -255,33 +276,50 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
 
 // ---------------- OCBDataPacket ----------------
 
-OCBDataPacket::OCBDataPacket(const std::vector<uint32_t>& words, bool debug) {
+OCBDataPacket::OCBDataPacket(const uint32_t* words, size_t size, bool debug) {
     m_debug = debug;
-    decodeOCBdata(words);
+    // size is in bytes; compute number of 32-bit words
+    size_t nwords = size / 4;
+    std::vector<uint32_t> word_vec;
+    word_vec.reserve(nwords);
+    for (size_t i = 0; i < nwords; ++i) word_vec.push_back(words[i]);
+
+    decodeOCBdata(word_vec);
 }
 
 void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
-    // throw std::runtime_error("Testing error handling in OCBDataPacket::decodeOCBdata");
-    if (words.size() < 2) throw std::runtime_error("OCB packet too small");
 
-    check_expected_word(words.front(), WordID::OCB_PACKET_HEADER);
-    check_expected_word(words.back(),  WordID::OCB_PACKET_TRAILER);
+    if (m_debug) {
+    std::cout << "Using debugging mode for OCB Data Packet decoding\n";
+    }
 
+    if (words.size() < 2) {
+        if (m_debug) std::cerr << "OCB data packet too small";
+        event.corrupted_ocb_packet = true;
+        return;
+    }
+
+    // Check that first word corresponds to OCB header
     std::unique_ptr<Word> header_word = parse_word(words.front());
-    std::unique_ptr<Word> trailer_word = parse_word(words.back());
+    if (header_word->word_id != WordID::OCB_PACKET_HEADER) {
+        if (m_debug) std::cerr << "Missing OCB Packet Header";
+        event.corrupted_ocb_packet = true;
+        return;
+    }
+    // Get event number from OCB header
     auto* ocb_packet_header  = dynamic_cast<OCBPacketHeader*>(header_word.get());
-    auto* ocb_packet_trailer = dynamic_cast<OCBPacketTrailer*>(trailer_word.get());
-
-    // if (ocb_packet_header->gate_type != ocb_packet_trailer->gate_type) {
-    //     throw std::runtime_error("Different gate type in OCB packet header and trailer!");
-    // }
-    // if (ocb_packet_header->gate_tag != ocb_packet_trailer->gate_tag) {
-    //     throw std::runtime_error("Different gate tag in OCB packet header and trailer!");
-    // }
-
     event.event_id = ocb_packet_header->event_number;
-    // Store trailer error bits in this packet and report any set errors
+
+    std::unique_ptr<Word> trailer_word = parse_word(words.back());
+    if (trailer_word->word_id != WordID::OCB_PACKET_TRAILER) {
+        if (m_debug) std::cerr << "Missing OCB Packet Trailer";
+        event.corrupted_ocb_packet = true;
+        return;
+    }
+    // Store error bits from OCB trailer
+    auto* ocb_packet_trailer = dynamic_cast<OCBPacketTrailer*>(trailer_word.get());
     event.ocb_errors = ocb_packet_trailer->errors;
+    
 
     // Check word count and construct FEB data packets
     int global_index = 0;
@@ -362,10 +400,10 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
                 }
 
                 else if (feb_id < 0 || feb_id >= (int)event.febs.size()) {
-                    std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
+                    if (m_debug) std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
                 } 
                 else if (event.febs[feb_id] != nullptr) {
-                    std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
+                    if (m_debug) std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
                 }
                 else { // Save FEB data packet only if not corrupted (i.e. no missing header or trailer) and valid board id
                     std::vector<uint32_t> feb_packet_word_list;
@@ -389,12 +427,30 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
         }
         ++global_index;
     }
+
+    // Check that last FEB data packet was closed properly
+    if (gate_header_index != -1) {
+        if (m_debug) std::cerr << "No FEB Data packet trailer received for FEB " << feb_id << "\n";
+        add_corrupted_feb_error(feb_id); 
+    }
 }
 
 std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event) {
         try {
+            if (event.isCorrupted()) {
+                out << "Corrupted OCB data packet: missing header or trailer." << std::endl;
+            }
             out
             << std::setfill('#')<<std::setw(16)<<" Event ID: "<<std::setfill(' ')<<std::setw(12)<<event.get_event_id()<<std::endl;
+            if (event.has_ocb_errors()) {
+                out << "OCB data packet has the following encoded errors:" << std::endl;
+                const auto& ocb_errors = event.get_ocb_errors();
+                for (size_t i = 0; i < ocb_errors.size(); ++i) {
+                    if (ocb_errors[i]) {
+                        out << "Error message: " << OCB_ERROR_MESSAGES[i] << std::endl;
+                    }
+                }
+            }
 
             for (size_t board_id = 0; board_id < OCBConfig::NUM_FEBS_PER_OCB; board_id++){
                 if (event.isCorruptedFEB(board_id)) {
@@ -410,15 +466,13 @@ std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event) {
                     for (const auto& hit_amplitude : feb_packet.get_hit_amplitudes()) {
                         out << hit_amplitude;
                     }
-                }
-            }
 
-            if (event.has_ocb_errors()) {
-                out << "OCB Packet has the following errors set in the trailer:" << std::endl;
-                const auto& ocb_errors = event.get_ocb_errors();
-                for (size_t i = 0; i < ocb_errors.size(); ++i) {
-                    if (ocb_errors[i]) {
-                        out << " - " << OCB_ERROR_MESSAGES[i] << std::endl;
+                    if (feb_packet.hasFEBerrors()) {
+                        out << "FEB " << board_id << " has the following encoded errors: " << std::endl;
+                        for (auto err : feb_packet.getFEBerrors()){
+                            auto errMsg = FEBDataPacket::feb_error_messages.find(err);
+                            out << "Error message: " << errMsg->second << std::endl;
+                        } 
                     }
                 }
             }

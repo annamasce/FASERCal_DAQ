@@ -1,6 +1,5 @@
 // ========================= OCBDecoder.h =========================
-#ifndef OCBDECODER_H
-#define OCBDECODER_H
+#pragma once
 
 #include <cstdint>
 #include <vector>
@@ -135,33 +134,61 @@ private:
 
 class FEBDataPacket {
 public:
-    int board_id = -1;
-    int hold_time = -1;
 
-    FEBDataPacket(const std::vector<uint32_t>& words);
+    // FEB data packet errors encoded in trailer
+    enum FEBDataPacketErrors : uint8_t {
+        rb_wr_err = 0x00,
+        event_done_timeout = 0x01,
+        l1_fifo_full = 0x02,
+        l0_fifo_full = 0x03
+    };
 
-    // const std::vector<HitData>& get_hits() const { return _hits; }
-    const std::vector<HitTimeData>& get_hit_times() const { return _hit_times; }
-    const std::vector<HitAmplitudeData>& get_hit_amplitudes() const { return _hit_amplitudes; }
+    // map FEB data packet errors to their messages
+    static inline std::map<unsigned int, std::string> feb_error_messages = {
+        {FEBDataPacketErrors::rb_wr_err, "RB WR error"},
+        {FEBDataPacketErrors::event_done_timeout, "EventDone timeout"},
+        {FEBDataPacketErrors::l1_fifo_full, "l1 fifo full"},
+        {FEBDataPacketErrors::l0_fifo_full, "l0 fifo full"}
+    };
+
+    FEBDataPacket(const std::vector<uint32_t>& words, bool debug = false);
+
+    void addError(unsigned int err);
     int find_matching_gts_tag(uint32_t tag_id, std::vector<uint32_t>& gts_tags) const;
 
+    // Getters
+    const std::vector<HitTimeData>& get_hit_times() const { return _hit_times; }
+    const std::vector<HitAmplitudeData>& get_hit_amplitudes() const { return _hit_amplitudes; }
+    bool isCorrupted() const { return is_corrupted; }
+    bool hasMissingGTS() const { return has_missing_gts; }
+    bool hasFEBerrors() const { return has_feb_errors; }
+    std::vector<bool> getFEBerrors() const {return feb_errors; }
+
 private:
+    int board_id = -1;
+    int hold_time = -1;
     std::vector<HitTimeData> _hit_times;
     std::vector<HitAmplitudeData> _hit_amplitudes;
     std::map<uint32_t, uint32_t> _gts_tag_map; // map GTS tag to GTS time in FEB data packet
-    bool artificial_trl2 = false;
-    bool event_done_timeout = false;
-    bool d1_fifo_full = false;
-    bool d0_fifo_full = false;
-    bool rb_cnt_error = false;
     int nb_decoder_errors = 0;
     void decodeFEBdata(const std::vector<uint32_t>& words);
+    inline static bool m_debug = false;
+    // corrupted FEB data packet flag: packet too small or missing gate header or FEB trailer
+    bool is_corrupted = false;
+    // missing GTS header or trailers flag
+    bool has_missing_gts = false;
+    // decoded FEB data packet errors
+    std::vector<bool> feb_errors;
+    bool has_feb_errors = false;
 };
 
 struct OCBevent {
     uint32_t event_id;
     // FEBs' indices assumed 0...NUM_FEB_PER_OCB; nullptr for missing FEBs.
     std::array<std::shared_ptr<FEBDataPacket>, OCBConfig::NUM_FEBS_PER_OCB> febs;
+
+    // corrupted OCB data packet flag: less than 2 words or missing header or trailer
+    bool corrupted_ocb_packet = false;
     // Error bits extracted from the OCB packet trailer (16 bits)
     std::array<bool, 16> ocb_errors{false};
     // per-FEB flag for corrupted FEB data packet: missing header or trailer
@@ -173,7 +200,10 @@ struct OCBevent {
 class OCBDataPacket {
 
 public:
-    OCBDataPacket(const std::vector<uint32_t>& words, bool debug = false);
+    // Construct from a pointer to 32-bit words and the total size in bytes.
+    // `size` is the total number of bytes in the fragment; the number of
+    // 32-bit words processed is `size / 4`.
+    OCBDataPacket(const uint32_t* words, size_t size, bool debug = false);
 
     uint32_t get_event_id() const { return event.event_id; }
 
@@ -186,8 +216,10 @@ public:
         }
         return false;
     }
+    // Access corrupted OCB data packet flag, i.e. less than 2 words or missing header or trailer
+    bool isCorrupted() const {return event.corrupted_ocb_packet; }
 
-    // Access corrupted FEB data packet flags
+    // Access corrupted FEB data packet flags, i.e. missing gate header or FEB trailer
     const std::array<bool, OCBConfig::NUM_FEBS_PER_OCB>& get_corrupted_feb_errors() const { return event.currupted_feb_errors; }
     bool isCorruptedFEB(size_t board_id) const { return event.currupted_feb_errors[board_id]; }
 
@@ -214,15 +246,14 @@ public:
         }
     }
 
+    static void set_debug_on( bool debug = true ) { m_debug = debug; } //set debug mode
 
     friend std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event);
 
 private:
     OCBevent event;
-    bool m_debug;
+    inline static bool m_debug = false;
     void decodeOCBdata(const std::vector<uint32_t>& words);
 };
-
-#endif // OCBDECODER_H
 
 

@@ -40,9 +40,15 @@ int main(int argc, char** argv) {
     std::vector<uint32_t> word_list;
 
     // First loop just to print all words once
+    int word_count = 0;
     while (in.read(reinterpret_cast<char*>(buf), 4)) {
         uint32_t word = bytes_to_uint32(buf);
+        if (parse_word(word)->word_id == WordID::FEB_DATA_PACKET_TRAILER && word_count > 0 && word_count < 200) {
+            std::cout << "Found FEB Data Packet Trailer word, skipping\n";
+            continue;
+        }
         word_list.push_back(word);
+        word_count++;
     }
 
     // Iterate OCB packets inside file
@@ -65,26 +71,10 @@ int main(int argc, char** argv) {
                 ocb_packet_word_list.push_back(word_list[k]);
             }
 
-            OCBDataPacket ocb(ocb_packet_word_list, /*debug=*/false);
-            ocb_packets.push_back(std::move(ocb));
-
-            // Print contents
-            const OCBDataPacket& ev = ocb_packets.back();
-
+            // construct OCBDataPacket from pointer and size in bytes
+            OCBDataPacket ev = OCBDataPacket(ocb_packet_word_list.data(), ocb_packet_word_list.size() * 4, true);
             std::cout << ev;
-
-            // std::cout << "OCB event " << ev.get_event_id() << " loaded.\n";
-            // for (size_t feb = 0; feb < ev.get_Nfebs_in_ocb(); ++feb) {
-            //     if (!ev.hasData(feb)) continue;
-            //     std::cout << " FEB " << feb << " present.\nHit times: " << ev[feb].get_hit_times().size() << "\n";
-            //     for (const auto& hit : ev[feb].get_hit_times()) {
-            //         hit.print();
-            //     }
-            //     std::cout << "Hit amplitudes: " << ev[feb].get_hit_times().size() << "\n";
-            //     for (const auto& hit : ev[feb].get_hit_amplitudes()) {
-            //         hit.print();
-            //     }
-            // }
+            ocb_packets.push_back(std::move(ev));
 
             start_index = -1;
         }
