@@ -125,13 +125,39 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
     std::vector<uint32_t> gts_tags;
     std::map<HitTimeKey, HitTimeData> hit_times_map;
     std::map<uint32_t, HitAmplitudeData> hit_amplitudes_map; // map channel id to hit amplitude data
+    
+    int global_feb_index = 0; // word index
+    int nbr_feb_words = 0; // nbr of feb words (excluding GTS before event)
+    int nbr_artif_feb_words = 0; // nbr of artificial FEB words
+
     bool open_gts_packet = false;
 
     for (auto& w : words) {
         std::unique_ptr<Word> base = parse_word(w);
         WordID id = base->word_id;
+        bool word_before_ev = false;
 
-        if (id == WordID::GTS_HEADER) {
+        if (id == WordID::GATE_HEADER) {
+            auto* gate_header = static_cast<GateHeader*>(base.get());
+            if (gate_header->header_type == 0) {// Gate header A
+                // if header 0 is not followed by header 1, it means that header 0 is artificially added by the OCB
+                if (global_feb_index + 1 < (int)words.size()) {
+                    std::unique_ptr<Word> next_w = parse_word(words.at(global_feb_index+1));
+                    if (next_w->word_id != WordID::GATE_HEADER) nbr_artif_feb_words++;
+                }
+            }
+        }
+
+        else if (id == WordID::EVENT_DONE) {
+            auto* event_done = static_cast<EventDone*>(base.get());
+            // Check word count
+            if ((int)event_done->word_count != nbr_feb_words - nbr_artif_feb_words) {
+                std::cerr << "Word count in EventDone ( " + std::to_string(event_done->word_count) 
+                                            << " ) does not match # words in FEB packet ( " << std::to_string(nbr_feb_words - nbr_artif_feb_words) << " )\n";
+            }
+        }
+
+        else if (id == WordID::GTS_HEADER) {
             if (open_gts_packet) {
                 if (m_debug) std::cerr << "Missing GTS Trailer before new GTS Header in FEB" << board_id << "\n";
                 has_missing_gts = true;
@@ -254,6 +280,13 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
             }
             open_gts_packet = false;
         }
+
+        global_feb_index++;
+        // Keep track of words sent before event (not counted by FEB)
+        if (id == WordID::GTS_HEADER || id == WordID::GTS_TRAILER1 || id == WordID::GTS_TRAILER2 || id == WordID::HIT_TIME || id == WordID::HIT_AMPLITUDE) {
+            if (gts_tags.size() <= OCBConfig::NUM_GTS_BEFORE_EVENT) word_before_ev = true;
+        }
+        if (!word_before_ev) nbr_feb_words++;
     }
 
     // Check that last GTS trailer was received
@@ -325,105 +358,52 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
     int global_index = 0;
     int gate_header_index = -1;
     int feb_id = -1;
-    int nbr_feb_words = 0;
-    int nbr_gts = 0;
+
     for (auto& w : words) {
         std::unique_ptr<Word> parsed_w = parse_word(w);
+        WordID id = parsed_w->word_id;
 
-        switch (parsed_w->word_id) {
-            case WordID::GATE_HEADER: {
-                auto* gate_header = static_cast<GateHeader*>(parsed_w.get());
-                if (gate_header->header_type != 0) nbr_feb_words++; // Gate header B
-                else { // Gate header A
-                    if (gate_header_index != -1) {
-                        if (m_debug) std::cerr << "No FEB Data packet trailer received for FEB " << feb_id << " before new Gate Header\n";
-                        add_corrupted_feb_error(feb_id); 
-                    }
-                    // reset FEB word counter
-                    nbr_feb_words = 0;
-                    nbr_gts = 0;
-                    // Store index of current gate header and board id
-                    gate_header_index = global_index;
-                    feb_id = gate_header->board_id;
-                    // word count should be increased only if header 0 is followed by header 1, otherwise it means header 0 is artificially added by the OCB
-                    if (global_index + 1 < (int)words.size()) {
-                        std::unique_ptr<Word> next_w = parse_word(words.at(global_index+1));
-                        if (next_w->word_id == WordID::GATE_HEADER) nbr_feb_words++;
-                    }
+        if (id == WordID::GATE_HEADER){
+            auto* gate_header = static_cast<GateHeader*>(parsed_w.get());
+            if (gate_header->header_type == 0) {// Gate header A
+                if (gate_header_index != -1) {
+                    if (m_debug) std::cerr << "No FEB Data packet trailer received for FEB " << feb_id << " before new Gate Header\n";
+                    add_corrupted_feb_error(feb_id); 
                 }
-                break;
+                gate_header_index = global_index;
+                feb_id = gate_header->board_id;
+            }
+        }
+
+        else if (id == WordID::FEB_DATA_PACKET_TRAILER) {
+            auto* feb_trailer = static_cast<FEBDataPacketTrailer*>(parsed_w.get());
+            if (gate_header_index < 0) {
+                if (m_debug) std::cerr << "FEB Data Packet Trailer received for FEB " << feb_trailer->board_id << " without corresponding Gate Header\n";
+                add_corrupted_feb_error(feb_trailer->board_id);
+            }
+            else if ((int)feb_trailer->board_id != feb_id) {
+                if (m_debug) std::cerr << "FEB Data Packet Trailer received for FEB " << feb_trailer->board_id 
+                            << " does not match FEB id " << feb_id << " in last Gate Header\n";
+                add_corrupted_feb_error(feb_trailer->board_id);
+                add_corrupted_feb_error(feb_id);
             }
 
-            case WordID::GATE_TIME:
-            case WordID::HOLD_TIME: {
-                nbr_feb_words++;
-                break;
+            else if (feb_id < 0 || feb_id >= (int)event.febs.size()) {
+                if (m_debug) std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
+            } 
+            else if (event.febs[feb_id] != nullptr) {
+                if (m_debug) std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
             }
-
-            case WordID::GTS_HEADER: {
-                nbr_gts++;
-                if (nbr_gts > OCBConfig::NUM_GTS_BEFORE_EVENT) nbr_feb_words++;
-                break;
-            }
-
-            // increment FEB word count only if number of GTS headers received is above GTS_BEFORE_EVENT
-            case WordID::GTS_TRAILER1:
-            case WordID::GTS_TRAILER2:
-            case WordID::HIT_TIME:
-            case WordID::HIT_AMPLITUDE: {
-                if (nbr_gts > OCBConfig::NUM_GTS_BEFORE_EVENT) nbr_feb_words++;
-                break;
-            }
-
-            case WordID::EVENT_DONE: {
-                auto* event_done = static_cast<EventDone*>(parsed_w.get());
-                // Check word count
-                if ((int)event_done->word_count != nbr_feb_words) {
-                    std::cerr << "Word count in EventDone ( " + std::to_string(event_done->word_count) 
-                                             << " ) does not match # words in FEB packet ( " << std::to_string(nbr_feb_words) << " )\n";
+            else { // Save FEB data packet only if not corrupted (i.e. no missing header or trailer) and valid board id
+                std::vector<uint32_t> feb_packet_word_list;
+                for (int k = gate_header_index; k < global_index+1; ++k) {
+                    feb_packet_word_list.push_back(words[k]);
                 }
-                break;
+                event.febs[feb_id] = std::make_shared<FEBDataPacket>(feb_packet_word_list);
             }
 
-            case WordID::FEB_DATA_PACKET_TRAILER: {
-                nbr_feb_words++;
-                auto* feb_trailer = static_cast<FEBDataPacketTrailer*>(parsed_w.get());
-                if (gate_header_index < 0) {
-                    if (m_debug) std::cerr << "FEB Data Packet Trailer received for FEB " << feb_trailer->board_id << " without corresponding Gate Header\n";
-                    add_corrupted_feb_error(feb_trailer->board_id);
-                }
-                else if ((int)feb_trailer->board_id != feb_id) {
-                    if (m_debug) std::cerr << "FEB Data Packet Trailer received for FEB " << feb_trailer->board_id 
-                              << " does not match FEB id " << feb_id << " in last Gate Header\n";
-                    add_corrupted_feb_error(feb_trailer->board_id);
-                    add_corrupted_feb_error(feb_id);
-                }
-
-                else if (feb_id < 0 || feb_id >= (int)event.febs.size()) {
-                    if (m_debug) std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
-                } 
-                else if (event.febs[feb_id] != nullptr) {
-                    if (m_debug) std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
-                }
-                else { // Save FEB data packet only if not corrupted (i.e. no missing header or trailer) and valid board id
-                    std::vector<uint32_t> feb_packet_word_list;
-                    for (int k = gate_header_index; k < global_index+1; ++k) {
-                        feb_packet_word_list.push_back(words[k]);
-                    }
-                    event.febs[feb_id] = std::make_shared<FEBDataPacket>(feb_packet_word_list);
-                }
-
-                // Reset FEB data packet index, nbr of FEB words, and nbr of GTS
-                gate_header_index = -1;
-                nbr_feb_words = 0;
-                nbr_gts = 0;
-                break;
-            }
-            
-            default: {
-                break;
-            }
-
+            // Reset FEB data packet index
+            gate_header_index = -1;
         }
         ++global_index;
     }

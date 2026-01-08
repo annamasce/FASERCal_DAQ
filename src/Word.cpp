@@ -239,6 +239,5 @@ std::unique_ptr<Word> parse_word(uint32_t word) {
         throw std::runtime_error("Unknown WordID: " + std::to_string(id));
 
     std::unique_ptr<Word> word_object = class_constructor->second(word);
-    // word_object->print();
     return word_object;
 }    
