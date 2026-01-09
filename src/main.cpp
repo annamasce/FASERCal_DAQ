@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
     while (in.read(reinterpret_cast<char*>(buf), 4)) {
         uint32_t word = bytes_to_uint32(buf);
         if (parse_word(word)->word_id == WordID::FEB_DATA_PACKET_TRAILER && word_count > 0 && word_count < 200) {
+            // Remove some words just for testing
             std::cout << "Found FEB Data Packet Trailer word, skipping\n";
             continue;
         }

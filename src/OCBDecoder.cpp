@@ -395,11 +395,7 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
                 if (m_debug) std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
             }
             else { // Save FEB data packet only if not corrupted (i.e. no missing header or trailer) and valid board id
-                std::vector<uint32_t> feb_packet_word_list;
-                for (int k = gate_header_index; k < global_index+1; ++k) {
-                    feb_packet_word_list.push_back(words[k]);
-                }
-                event.febs[feb_id] = std::make_shared<FEBDataPacket>(feb_packet_word_list);
+                event.febs[feb_id] = std::make_shared<FEBDataPacket>(std::vector<uint32_t>(words.begin() + gate_header_index, words.begin() + (global_index + 1)));
             }
 
             // Reset FEB data packet index
