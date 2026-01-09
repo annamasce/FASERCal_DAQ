@@ -141,7 +141,7 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
             auto* gate_header = static_cast<GateHeader*>(base.get());
             if (gate_header->header_type == 0) {// Gate header A
                 // if header 0 is not followed by header 1, it means that header 0 is artificially added by the OCB
-                if (global_feb_index + 1 < (int)words.size()) {
+                if (global_feb_index + 1 < static_cast<int>(words.size())) {
                     std::unique_ptr<Word> next_w = parse_word(words.at(global_feb_index+1));
                     if (next_w->word_id != WordID::GATE_HEADER) nbr_artif_feb_words++;
                 }
@@ -151,7 +151,7 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
         else if (id == WordID::EVENT_DONE) {
             auto* event_done = static_cast<EventDone*>(base.get());
             // Check word count
-            if ((int)event_done->word_count != nbr_feb_words - nbr_artif_feb_words) {
+            if (static_cast<int>(event_done->word_count) != nbr_feb_words - nbr_artif_feb_words) {
                 std::cerr << "Word count in EventDone ( " + std::to_string(event_done->word_count) 
                                             << " ) does not match # words in FEB packet ( " << std::to_string(nbr_feb_words - nbr_artif_feb_words) << " )\n";
             }
@@ -196,8 +196,8 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
                 auto it = hit_times_map.find(key);
                 if (it == hit_times_map.end()) {
                     // Rising edge must be received before falling edge
-                    std::cerr << "Falling edge received before rising edge for channel_id=" << std::to_string(channel_id) 
-                    << " and hit_id=" << std::to_string(hit_id) << " -> skipping...\n";
+                    std::cerr << "Falling edge received before rising edge for channel_id=" << std::to_string(channel_id) << 
+                    " and hit_id=" << std::to_string(hit_id) << " -> skipping...\n";
                 }
                 else if (it->second.get_hit_time_fall() != -1) {
                     // Falling edge already received for this hit
@@ -311,29 +311,26 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
 
 OCBDataPacket::OCBDataPacket(const uint32_t* words, size_t size, bool debug) {
     m_debug = debug;
+    m_size = size;
     // size is in bytes; compute number of 32-bit words
     size_t nwords = size / 4;
-    std::vector<uint32_t> word_vec;
-    word_vec.reserve(nwords);
-    for (size_t i = 0; i < nwords; ++i) word_vec.push_back(words[i]);
-
-    decodeOCBdata(word_vec);
+    // decode directly from the provided pointer range to avoid copying
+    decodeOCBdata(words, nwords);
 }
 
-void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
-
+void OCBDataPacket::decodeOCBdata(const uint32_t* words, size_t nwords) {
     if (m_debug) {
-    std::cout << "Using debugging mode for OCB Data Packet decoding\n";
+        std::cout << "Using debugging mode for OCB Data Packet decoding\n";
     }
 
-    if (words.size() < 2) {
+    if (nwords < 2) {
         if (m_debug) std::cerr << "OCB data packet too small";
         event.corrupted_ocb_packet = true;
         return;
     }
 
     // Check that first word corresponds to OCB header
-    std::unique_ptr<Word> header_word = parse_word(words.front());
+    std::unique_ptr<Word> header_word = parse_word(words[0]);
     if (header_word->word_id != WordID::OCB_PACKET_HEADER) {
         if (m_debug) std::cerr << "Missing OCB Packet Header";
         event.corrupted_ocb_packet = true;
@@ -343,7 +340,7 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
     auto* ocb_packet_header  = dynamic_cast<OCBPacketHeader*>(header_word.get());
     event.event_id = ocb_packet_header->event_number;
 
-    std::unique_ptr<Word> trailer_word = parse_word(words.back());
+    std::unique_ptr<Word> trailer_word = parse_word(words[nwords-1]);
     if (trailer_word->word_id != WordID::OCB_PACKET_TRAILER) {
         if (m_debug) std::cerr << "Missing OCB Packet Trailer";
         event.corrupted_ocb_packet = true;
@@ -352,14 +349,14 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
     // Store error bits from OCB trailer
     auto* ocb_packet_trailer = dynamic_cast<OCBPacketTrailer*>(trailer_word.get());
     event.ocb_errors = ocb_packet_trailer->errors;
-    
 
     // Check word count and construct FEB data packets
     int global_index = 0;
     int gate_header_index = -1;
     int feb_id = -1;
 
-    for (auto& w : words) {
+    for (size_t i = 0; i < nwords; ++i) {
+        uint32_t w = words[i];
         std::unique_ptr<Word> parsed_w = parse_word(w);
         WordID id = parsed_w->word_id;
 
@@ -368,7 +365,7 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
             if (gate_header->header_type == 0) {// Gate header A
                 if (gate_header_index != -1) {
                     if (m_debug) std::cerr << "No FEB Data packet trailer received for FEB " << feb_id << " before new Gate Header\n";
-                    add_corrupted_feb_error(feb_id); 
+                    add_corrupted_feb_error(feb_id);
                 }
                 gate_header_index = global_index;
                 feb_id = gate_header->board_id;
@@ -388,14 +385,14 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
                 add_corrupted_feb_error(feb_id);
             }
 
-            else if (feb_id < 0 || feb_id >= (int)event.febs.size()) {
+            else if (feb_id < 0 || feb_id >= static_cast<int>(event.febs.size())) {
                 if (m_debug) std::cerr << "Warning: encountered FEB with invalid board id " << feb_id << ", skipping\n";
             } 
             else if (event.febs[feb_id] != nullptr) {
                 if (m_debug) std::cerr << "Warning: FEB data packet for board " << feb_id << " already received\n";
             }
             else { // Save FEB data packet only if not corrupted (i.e. no missing header or trailer) and valid board id
-                event.febs[feb_id] = std::make_shared<FEBDataPacket>(std::vector<uint32_t>(words.begin() + gate_header_index, words.begin() + (global_index + 1)));
+                event.febs[feb_id] = std::make_shared<FEBDataPacket>(std::vector<uint32_t>(&words[gate_header_index], &words[global_index + 1]), m_debug);
             }
 
             // Reset FEB data packet index
@@ -407,7 +404,7 @@ void OCBDataPacket::decodeOCBdata(const std::vector<uint32_t>& words) {
     // Check that last FEB data packet was closed properly
     if (gate_header_index != -1) {
         if (m_debug) std::cerr << "No FEB Data packet trailer received for FEB " << feb_id << "\n";
-        add_corrupted_feb_error(feb_id); 
+        add_corrupted_feb_error(feb_id);
     }
 }
 

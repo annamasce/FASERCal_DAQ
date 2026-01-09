@@ -152,6 +152,9 @@ public:
     };
 
     FEBDataPacket(const std::vector<uint32_t>& words, bool debug = false);
+    // Pointer/count constructor to avoid an intermediate vector copy when
+    // decoding FEB data directly from an existing buffer.
+    FEBDataPacket(const uint32_t* words, size_t nwords, bool debug = false);
 
     void addError(unsigned int err);
     int find_matching_gts_tag(uint32_t tag_id, std::vector<uint32_t>& gts_tags) const;
@@ -172,6 +175,8 @@ private:
     std::map<uint32_t, uint32_t> _gts_tag_map; // map GTS tag to GTS time in FEB data packet
     int nb_decoder_errors = 0;
     void decodeFEBdata(const std::vector<uint32_t>& words);
+    // Pointer/count overload to decode FEB data without copying
+    void decodeFEBdata(const uint32_t* words, size_t nwords);
     inline static bool m_debug = false;
     // corrupted FEB data packet flag: packet too small or missing gate header or FEB trailer
     bool is_corrupted = false;
@@ -206,6 +211,7 @@ public:
     OCBDataPacket(const uint32_t* words, size_t size, bool debug = false);
 
     uint32_t get_event_id() const { return event.event_id; }
+    uint32_t get_size() const { return m_size; }
 
     // Access decoded OCB trailer error bits (16 flags)
     const std::array<bool, 16>& get_ocb_errors() const { return event.ocb_errors; }
@@ -252,8 +258,11 @@ public:
 
 private:
     OCBevent event;
+    size_t m_size;
     inline static bool m_debug = false;
     void decodeOCBdata(const std::vector<uint32_t>& words);
+    // Overload that decodes directly from a pointer+count to avoid copying
+    void decodeOCBdata(const uint32_t* words, size_t nwords);
 };
 
 
