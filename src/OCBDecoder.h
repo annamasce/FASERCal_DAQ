@@ -135,22 +135,6 @@ private:
 class FEBDataPacket {
 public:
 
-    // FEB data packet errors encoded in trailer
-    enum FEBDataPacketErrors : uint8_t {
-        rb_wr_err = 0x00,
-        event_done_timeout = 0x01,
-        l1_fifo_full = 0x02,
-        l0_fifo_full = 0x03
-    };
-
-    // map FEB data packet errors to their messages
-    static inline std::map<unsigned int, std::string> feb_error_messages = {
-        {FEBDataPacketErrors::rb_wr_err, "RB WR error"},
-        {FEBDataPacketErrors::event_done_timeout, "EventDone timeout"},
-        {FEBDataPacketErrors::l1_fifo_full, "l1 fifo full"},
-        {FEBDataPacketErrors::l0_fifo_full, "l0 fifo full"}
-    };
-
     FEBDataPacket(const std::vector<uint32_t>& words, bool debug = false);
     // Pointer/count constructor to avoid an intermediate vector copy when
     // decoding FEB data directly from an existing buffer.
@@ -164,8 +148,17 @@ public:
     const std::vector<HitAmplitudeData>& get_hit_amplitudes() const { return _hit_amplitudes; }
     bool isCorrupted() const { return is_corrupted; }
     bool hasMissingGTS() const { return has_missing_gts; }
-    bool hasFEBerrors() const { return has_feb_errors; }
-    std::vector<bool> getFEBerrors() const {return feb_errors; }
+    
+    // Access decoded FEB trailer error bits (4 flags)
+    const std::array<bool, 4>& get_feb_errors() const { return feb_errors; }
+    // Print messages for any FEB errors stored in this packet's `feb_errors`.
+    static std::string errorMessageForBit(std::size_t bit);
+    bool has_feb_errors() const {
+        for (const auto& err : feb_errors) {
+            if (err) return true;
+        }
+        return false;
+    }
 
 private:
     int board_id = -1;
@@ -173,7 +166,6 @@ private:
     std::vector<HitTimeData> _hit_times;
     std::vector<HitAmplitudeData> _hit_amplitudes;
     std::map<uint32_t, uint32_t> _gts_tag_map; // map GTS tag to GTS time in FEB data packet
-    int nb_decoder_errors = 0;
     void decodeFEBdata(const std::vector<uint32_t>& words);
     // Pointer/count overload to decode FEB data without copying
     void decodeFEBdata(const uint32_t* words, size_t nwords);
@@ -182,9 +174,9 @@ private:
     bool is_corrupted = false;
     // missing GTS header or trailers flag
     bool has_missing_gts = false;
-    // decoded FEB data packet errors
-    std::vector<bool> feb_errors;
-    bool has_feb_errors = false;
+    // Error bits extracted from the FEB packet trailer (16 bits)
+    std::array<bool, 4> feb_errors{false};
+    int nb_decoder_errors = 0;
 };
 
 struct OCBevent {
@@ -216,6 +208,7 @@ public:
     // Access decoded OCB trailer error bits (16 flags)
     const std::array<bool, 16>& get_ocb_errors() const { return event.ocb_errors; }
     // Print messages for any OCB errors stored in this packet's `ocb_errors`.
+    static std::string errorMessageForBit(std::size_t bit);
     bool has_ocb_errors() const {
         for (const auto& err : event.ocb_errors) {
             if (err) return true;

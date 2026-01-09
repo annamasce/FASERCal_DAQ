@@ -215,29 +215,33 @@ std::unique_ptr<Word> construct(uint32_t raw) {
     return std::make_unique<T>(raw);
 }
 
-static std::unordered_map<WordID, WordFactory> WORD_CLASSES = {
-    { WordID::GATE_HEADER,        &construct<GateHeader> },
-    { WordID::GATE_TIME,          &construct<GateTime> },
-    { WordID::HOLD_TIME,          &construct<HoldTime> },
-    { WordID::GTS_HEADER,         &construct<GTSHeader> },
-    { WordID::HIT_TIME,           &construct<HitTime> },
-    { WordID::HIT_AMPLITUDE,      &construct<HitAmplitude> },
-    { WordID::GTS_TRAILER1,       &construct<GTSTrailer1> },
-    { WordID::GTS_TRAILER2,       &construct<GTSTrailer2> },
-    { WordID::GATE_TRAILER,       &construct<GateTrailer> },
-    { WordID::EVENT_DONE,         &construct<EventDone> },
-    { WordID::OCB_PACKET_HEADER,  &construct<OCBPacketHeader> },
-    { WordID::OCB_PACKET_TRAILER, &construct<OCBPacketTrailer> },
-    { WordID::FEB_DATA_PACKET_TRAILER, &construct<FEBDataPacketTrailer> }
-};
+const std::unordered_map<WordID, WordFactory>& word_classes() {
+    static const std::unordered_map<WordID, WordFactory> map = {
+        { WordID::GATE_HEADER,        &construct<GateHeader> },
+        { WordID::GATE_TIME,          &construct<GateTime> },
+        { WordID::HOLD_TIME,          &construct<HoldTime> },
+        { WordID::GTS_HEADER,         &construct<GTSHeader> },
+        { WordID::HIT_TIME,           &construct<HitTime> },
+        { WordID::HIT_AMPLITUDE,      &construct<HitAmplitude> },
+        { WordID::GTS_TRAILER1,       &construct<GTSTrailer1> },
+        { WordID::GTS_TRAILER2,       &construct<GTSTrailer2> },
+        { WordID::GATE_TRAILER,       &construct<GateTrailer> },
+        { WordID::EVENT_DONE,         &construct<EventDone> },
+        { WordID::OCB_PACKET_HEADER,  &construct<OCBPacketHeader> },
+        { WordID::OCB_PACKET_TRAILER, &construct<OCBPacketTrailer> },
+        { WordID::FEB_DATA_PACKET_TRAILER, &construct<FEBDataPacketTrailer> }
+    };
+    return map;
+}
 
 std::unique_ptr<Word> parse_word(uint32_t word) {
     WordID id = get_wordID(word);
 
-    auto class_constructor = WORD_CLASSES.find(id);
-    if (class_constructor == WORD_CLASSES.end())
+    const auto& classes = word_classes();
+
+    auto class_constructor = classes.find(id);
+    if (class_constructor == classes.end())
         throw std::runtime_error("Unknown WordID: " + std::to_string(id));
 
-    std::unique_ptr<Word> word_object = class_constructor->second(word);
-    return word_object;
+    return class_constructor->second(word);
 }    

@@ -3,25 +3,6 @@
 // #include <map>
 #include <array>
 
-// Human-readable descriptions for the 16 OCB trailer error bits.
-static const char* OCB_ERROR_MESSAGES[16] = {
-    "FEB data packet 0 error",
-    "FEB data packet 1 error",
-    "FEB data packet 2 error",
-    "FEB data packet 3 error",
-    "FEB data packet 4 error",
-    "FEB data packet 5 error",
-    "FEB data packet 6 error",
-    "FEB data packet 7 error",
-    "FEB data packet 8 error",
-    "FEB data packet 9 error",
-    "FEB data packet 10 error",
-    "FEB data packet 11 error",
-    "FEB data packet 12 error",
-    "FEB data packet 13 error",
-    "Gate close error",
-    "Gate open timeout"
-};
 
 OCBevent::OCBevent() {
     febs.fill(nullptr);
@@ -88,10 +69,10 @@ FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words, bool debug) {
     auto* feb_packet_trailer = dynamic_cast<FEBDataPacketTrailer*>(trailer_word.get());
     nb_decoder_errors = feb_packet_trailer->nb_decoder_errors;
     if (nb_decoder_errors > 0) has_feb_errors = true;
-    if (feb_packet_trailer->rb_wr_error) addError(FEBDataPacketErrors::rb_wr_err);
-    if (feb_packet_trailer->event_done_timeout) addError(FEBDataPacketErrors::event_done_timeout);
-    if (feb_packet_trailer->l1_fifo_full) addError(FEBDataPacketErrors::l1_fifo_full);
-    if (feb_packet_trailer->l0_fifo_full) addError(FEBDataPacketErrors::l0_fifo_full);
+    if (feb_packet_trailer->rb_wr_error) feb_errors[0] = true;
+    if (feb_packet_trailer->event_done_timeout) feb_errors[1] = true;
+    if (feb_packet_trailer->l1_fifo_full) feb_errors[2] = true;
+    if (feb_packet_trailer->l0_fifo_full) feb_errors[3] = true;
 
     // optional hold_time
     if (words.size() > 1 && parse_word(words.at(1))->word_id == WordID::HOLD_TIME){
@@ -113,11 +94,6 @@ int FEBDataPacket::find_matching_gts_tag(uint32_t tag_id, std::vector<uint32_t>&
         }
     }
     return -1; // no matching GTS tag found
-}
-
-void FEBDataPacket::addError(unsigned int err){
-    has_feb_errors = true;
-    feb_errors.push_back(err);
 }
 
 void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
@@ -307,6 +283,17 @@ void FEBDataPacket::decodeFEBdata(const std::vector<uint32_t>& words) {
     }
 }
 
+std::string FEBDataPacket::errorMessageForBit(std::size_t bit)
+{
+    switch (bit) {
+        case 0: return "RB WR error";
+        case 1: return "Event done timeout";
+        case 2: return "L1 FIFO full";
+        case 3: return "L0 FIFO full";
+        default: return "Unknown FEB error bit";
+    }
+}
+
 // ---------------- OCBDataPacket ----------------
 
 OCBDataPacket::OCBDataPacket(const uint32_t* words, size_t size, bool debug) {
@@ -408,6 +395,19 @@ void OCBDataPacket::decodeOCBdata(const uint32_t* words, size_t nwords) {
     }
 }
 
+std::string OCBDataPacket::errorMessageForBit(std::size_t bit)
+{
+    if (bit < 14) {
+        return "FEB data packet " + std::to_string(bit) + " error";
+    }
+
+    switch (bit) {
+        case 14: return "Gate close error";
+        case 15: return "Gate open timeout";
+        default: return "Unknown OCB error bit";
+    }
+}
+
 std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event) {
         try {
             if (event.isCorrupted()) {
@@ -420,7 +420,7 @@ std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event) {
                 const auto& ocb_errors = event.get_ocb_errors();
                 for (size_t i = 0; i < ocb_errors.size(); ++i) {
                     if (ocb_errors[i]) {
-                        out << "Error message: " << OCB_ERROR_MESSAGES[i] << std::endl;
+                        out << "Error message: " << event.errorMessageForBit(i) << std::endl;
                     }
                 }
             }
@@ -440,12 +440,14 @@ std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event) {
                         out << hit_amplitude;
                     }
 
-                    if (feb_packet.hasFEBerrors()) {
-                        out << "FEB " << board_id << " has the following encoded errors: " << std::endl;
-                        for (auto err : feb_packet.getFEBerrors()){
-                            auto errMsg = FEBDataPacket::feb_error_messages.find(err);
-                            out << "Error message: " << errMsg->second << std::endl;
-                        } 
+                    if (feb_packet.has_feb_errors()) {
+                        out << "FEB data packet has the following encoded errors:" << std::endl;
+                        const auto& feb_errors = feb_packet.get_feb_errors();
+                        for (size_t i = 0; i < feb_errors.size(); ++i) {
+                            if (feb_errors[i]) {
+                                out << "Error message: " << feb_packet.errorMessageForBit(i) << std::endl;
+                            }
+                        }
                     }
                 }
             }
