@@ -68,11 +68,15 @@ FEBDataPacket::FEBDataPacket(const std::vector<uint32_t>& words, bool debug) {
     // Store error bits from FEB Data Packet trailer
     auto* feb_packet_trailer = dynamic_cast<FEBDataPacketTrailer*>(trailer_word.get());
     nb_decoder_errors = feb_packet_trailer->nb_decoder_errors;
-    if (nb_decoder_errors > 0) has_feb_errors = true;
+    if (nb_decoder_errors > 0) m_has_feb_errors = true;
     if (feb_packet_trailer->rb_wr_error) feb_errors[0] = true;
     if (feb_packet_trailer->event_done_timeout) feb_errors[1] = true;
     if (feb_packet_trailer->l1_fifo_full) feb_errors[2] = true;
     if (feb_packet_trailer->l0_fifo_full) feb_errors[3] = true;
+    for (const auto& err : feb_errors) {
+        if (err) m_has_feb_errors = true;
+        break;
+    }
 
     // optional hold_time
     if (words.size() > 1 && parse_word(words.at(1))->word_id == WordID::HOLD_TIME){
@@ -447,6 +451,10 @@ std::ostream &operator<<(std::ostream &out, const OCBDataPacket &event) {
                             if (feb_errors[i]) {
                                 out << "Error message: " << feb_packet.errorMessageForBit(i) << std::endl;
                             }
+                        }
+                        int nb_decoder_errors = feb_packet.get_nb_decoder_errors();
+                        if (nb_decoder_errors > 0) {
+                            out << "Number of decoder errors: " << nb_decoder_errors << std::endl;
                         }
                     }
                 }

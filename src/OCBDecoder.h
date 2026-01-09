@@ -153,12 +153,8 @@ public:
     const std::array<bool, 4>& get_feb_errors() const { return feb_errors; }
     // Print messages for any FEB errors stored in this packet's `feb_errors`.
     static std::string errorMessageForBit(std::size_t bit);
-    bool has_feb_errors() const {
-        for (const auto& err : feb_errors) {
-            if (err) return true;
-        }
-        return false;
-    }
+    int get_nb_decoder_errors() const { return nb_decoder_errors; }
+    bool has_feb_errors() const { return m_has_feb_errors; }
 
 private:
     int board_id = -1;
@@ -177,6 +173,7 @@ private:
     // Error bits extracted from the FEB packet trailer (16 bits)
     std::array<bool, 4> feb_errors{false};
     int nb_decoder_errors = 0;
+    bool m_has_feb_errors = false;
 };
 
 struct OCBevent {
